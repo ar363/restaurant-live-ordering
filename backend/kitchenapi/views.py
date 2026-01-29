@@ -80,11 +80,26 @@ class CreateOrderSchema(Schema):
 class UpdateOrderStatusSchema(Schema):
     status: str
 
+class ErrorSchema(Schema):
+    error: str
+
+class AuthResponseSchema(Schema):
+    token: str
+    user: dict
+
+class UserExistsSchema(Schema):
+    exists: bool
+
 # Auth endpoints
-@api.post("/auth/register", auth=None)
+@api.post("/auth/check-user", auth=None, response=UserExistsSchema)
+def check_user_exists(request, username: str):
+    exists = User.objects.filter(username=username).exists()
+    return {"exists": exists}
+
+@api.post("/auth/register", auth=None, response={200: AuthResponseSchema, 400: ErrorSchema})
 def register(request, data: UserSchema):
     if User.objects.filter(username=data.username).exists():
-        return {"error": "Username already exists"}, 400
+        return 400, {"error": "Username already exists"}
     
     user = User.objects.create_user(
         username=data.username,
@@ -104,7 +119,7 @@ def register(request, data: UserSchema):
         "user": {"id": user.id, "username": user.username, "email": user.email}
     }
 
-@api.post("/auth/login", auth=None)
+@api.post("/auth/login", auth=None, response={200: AuthResponseSchema, 401: ErrorSchema})
 def login(request, data: LoginSchema):
     user = authenticate(username=data.username, password=data.password)
     if user:
@@ -119,7 +134,7 @@ def login(request, data: LoginSchema):
             "token": token,
             "user": {"id": user.id, "username": user.username}
         }
-    return {"error": "Invalid credentials"}, 401
+    return 401, {"error": "Invalid credentials"}
 
 # Menu endpoints
 @api.get("/menu", response=List[MenuItemSchema], auth=None)
@@ -151,10 +166,10 @@ def get_menu_item(request, item_id: int):
         "image": item.image.url if item.image else None
     }
 
-@api.post("/menu", response=MenuItemSchema, auth=TokenAuth())
+@api.post("/menu", auth=TokenAuth(), response={200: MenuItemSchema, 403: ErrorSchema})
 def create_menu_item(request, data: MenuItemSchema):
     if not request.auth.is_staff:
-        return {"error": "Admin access required"}, 403
+        return 403, {"error": "Admin access required"}
     
     item = MenuItem.objects.create(
         name=data.name,
@@ -173,10 +188,10 @@ def create_menu_item(request, data: MenuItemSchema):
         "image": None
     }
 
-@api.put("/menu/{item_id}", response=MenuItemSchema, auth=TokenAuth())
+@api.put("/menu/{item_id}", auth=TokenAuth(), response={200: MenuItemSchema, 403: ErrorSchema})
 def update_menu_item(request, item_id: int, data: MenuItemSchema):
     if not request.auth.is_staff:
-        return {"error": "Admin access required"}, 403
+        return 403, {"error": "Admin access required"}
     
     item = get_object_or_404(MenuItem, id=item_id)
     for attr, value in data.dict(exclude_unset=True).items():
@@ -194,10 +209,10 @@ def update_menu_item(request, item_id: int, data: MenuItemSchema):
         "image": item.image.url if item.image else None
     }
 
-@api.delete("/menu/{item_id}", auth=TokenAuth())
+@api.delete("/menu/{item_id}", auth=TokenAuth(), response={200: dict, 403: ErrorSchema})
 def delete_menu_item(request, item_id: int):
     if not request.auth.is_staff:
-        return {"error": "Admin access required"}, 403
+        return 403, {"error": "Admin access required"}
     
     item = get_object_or_404(MenuItem, id=item_id)
     item.delete()
@@ -312,13 +327,13 @@ def create_order(request, data: CreateOrderSchema):
         ]
     }
 
-@api.get("/orders/{order_id}", response=OrderSchema, auth=TokenAuth())
+@api.get("/orders/{order_id}", auth=TokenAuth(), response={200: OrderSchema, 403: ErrorSchema})
 def get_order(request, order_id: int):
     user = request.auth
     order = get_object_or_404(Order, id=order_id)
     
     if not user.is_staff and order.user != user:
-        return {"error": "Access denied"}, 403
+        return 403, {"error": "Access denied"}
     
     return {
         "id": order.id,
@@ -343,12 +358,12 @@ def get_order(request, order_id: int):
         ]
     }
 
-@api.patch("/orders/{order_id}/status", response=OrderSchema, auth=TokenAuth())
+@api.patch("/orders/{order_id}/status", auth=TokenAuth(), response={200: OrderSchema, 400: ErrorSchema})
 def update_order_status(request, order_id: int, data: UpdateOrderStatusSchema):
     order = get_object_or_404(Order, id=order_id)
     
     if data.status not in dict(Order.STATUS_CHOICES):
-        return {"error": "Invalid status"}, 400
+        return 400, {"error": "Invalid status"}
     
     order.status = data.status
     order.save()
