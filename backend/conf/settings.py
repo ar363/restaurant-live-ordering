@@ -23,18 +23,20 @@ SECRET_KEY = env("SECRET_KEY", default="django-insecure--changeme")
 DEBUG = env.bool("DEBUG", default=True)
 
 # Allow a comma-separated list in `ALLOWED_HOSTS` env var
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",
     "corsheaders",
     "kitchenapi",
 ]
@@ -68,6 +70,22 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "conf.wsgi.application"
+ASGI_APPLICATION = "conf.asgi.application"
+
+
+REDIS_HOST = env("REDIS_HOST", default="localhost")
+REDIS_PORT = env.int("REDIS_PORT", default=6379)
+REDIS_DB = env.int("REDIS_DB", default=0)
+
+# Channels configuration
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [(REDIS_HOST, REDIS_PORT)],
+        },
+    },
+}
 
 
 # Database

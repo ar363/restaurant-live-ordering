@@ -212,6 +212,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cart/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Cart
+         * @description Get cart data from Redis
+         */
+        get: operations["kitchenapi_views_get_cart"];
+        put?: never;
+        /**
+         * Sync Cart
+         * @description Sync cart data to Redis with 1 hour expiry
+         */
+        post: operations["kitchenapi_views_sync_cart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -367,6 +391,36 @@ export interface components {
         UpdateOrderStatusSchema: {
             /** Status */
             status: string;
+        };
+        /** CartSyncResponseSchema */
+        CartSyncResponseSchema: {
+            /** Success */
+            success: boolean;
+        };
+        /** CartDataSchema */
+        CartDataSchema: {
+            /** Items */
+            items: components["schemas"]["CartItemSchema"][];
+            /** Last Updated */
+            last_updated: number;
+        };
+        /** CartItemSchema */
+        CartItemSchema: {
+            /** Menu Item Id */
+            menu_item_id: number;
+            menu_item: components["schemas"]["MenuItemSchema"];
+            /** Quantity */
+            quantity: number;
+        };
+        /** CartSyncRequestSchema */
+        CartSyncRequestSchema: {
+            /** User Id */
+            user_id: number;
+            cart: components["schemas"]["CartDataSchema"];
+        };
+        /** CartGetResponseSchema */
+        CartGetResponseSchema: {
+            cart?: components["schemas"]["CartDataSchema"] | null;
         };
     };
     responses: never;
@@ -795,6 +849,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    kitchenapi_views_get_cart: {
+        parameters: {
+            query: {
+                user_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CartGetResponseSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_sync_cart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CartSyncRequestSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CartSyncResponseSchema"];
+                };
             };
         };
     };

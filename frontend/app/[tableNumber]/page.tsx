@@ -3,9 +3,24 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { AuthDrawer } from "@/components/auth-drawer";
+import { CartDrawer } from "@/components/cart-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { apiClient, auth } from "@/lib/api";
+import {
+  loadCartFromLocalStorage,
+  saveCartToLocalStorage,
+  syncCartToServer,
+  connectCartWebSocket,
+  getCartTotal,
+  getCartItemCount,
+  addItemToCart,
+  removeItemFromCart,
+  updateItemQuantity,
+  deleteItemFromCart,
+  getItemQuantity,
+  CartItem,
+} from "@/lib/cart";
 import type { components } from "@/types/api";
 
 type MenuItem = components["schemas"]["MenuItemSchema"];
@@ -15,10 +30,12 @@ export default function MenuPage() {
   const tableNumber = params.tableNumber as string;
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
   const [showAuthDrawer, setShowAuthDrawer] = useState(false);
+  const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState<Map<number, number>>(new Map());
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
   useEffect(() => {
     // Check authentication status
@@ -27,13 +44,38 @@ export default function MenuPage() {
     
     if (!authenticated) {
       setShowAuthDrawer(true);
+    } else {
+      // Extract user ID from token
+      const token = auth.getToken();
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          setUserId(payload.user_id || null);
+        } catch (e) {
+          console.error("Error parsing token:", e);
+        }
+      }
     }
+
+    // Load cart from localStorage
+    const savedCart = loadCartFromLocalStorage();
+    setCartItems(savedCart);
   }, []);
 
   useEffect(() => {
     // Fetch menu items
     fetchMenuItems();
   }, []);
+
+  useEffect(() => {
+    // Connect to WebSocket for real-time cart updates if authenticated
+    if (userId) {
+      const disconnect = connectCartWebSocket(userId, (items) => {
+        setCartItems(items);
+      });
+      return () => disconnect();
+    }
+  }, [userId]);
 
   const fetchMenuItems = async () => {
     setLoading(true);
@@ -56,43 +98,53 @@ export default function MenuPage() {
   const handleAuthSuccess = () => {
     setIsAuthenticated(true);
     setShowAuthDrawer(false);
-  };
-
-  const addToCart = (itemId: number) => {
-    const newCart = new Map(cart);
-    const currentQty = newCart.get(itemId) || 0;
-    newCart.set(itemId, currentQty + 1);
-    setCart(newCart);
-  };
-
-  const removeFromCart = (itemId: number) => {
-    const newCart = new Map(cart);
-    const currentQty = newCart.get(itemId) || 0;
-    if (currentQty > 1) {
-      newCart.set(itemId, currentQty - 1);
-    } else {
-      newCart.delete(itemId);
-    }
-    setCart(newCart);
-  };
-
-  const getCartItemCount = (itemId: number) => {
-    return cart.get(itemId) || 0;
-  };
-
-  const getTotalItems = () => {
-    return Array.from(cart.values()).reduce((sum, qty) => sum + qty, 0);
-  };
-
-  const getTotalPrice = () => {
-    let total = 0;
-    cart.forEach((qty, itemId) => {
-      const item = menuItems.find((i) => i.id === itemId);
-      if (item) {
-        total += item.price * qty;
+    
+    // Get user ID from token
+    const token = auth.getToken();
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setUserId(payload.user_id || null);
+      } catch (e) {
+        console.error("Error parsing token:", e);
       }
-    });
-    return total.toFixed(2);
+    }
+  };
+
+  const updateCart = (newItems: CartItem[]) => {
+    setCartItems(newItems);
+    const lastUpdated = saveCartToLocalStorage(newItems);
+    
+    // Sync to server if authenticated
+    if (userId) {
+      syncCartToServer(userId, newItems, lastUpdated);
+    }
+  };
+
+  const handleAddToCart = (item: MenuItem) => {
+    const newItems = addItemToCart(cartItems, item);
+    updateCart(newItems);
+  };
+
+  const handleRemoveFromCart = (itemId: number) => {
+    const newItems = removeItemFromCart(cartItems, itemId);
+    updateCart(newItems);
+  };
+
+  const handleUpdateQuantity = (itemId: number, quantity: number) => {
+    const newItems = updateItemQuantity(cartItems, itemId, quantity);
+    updateCart(newItems);
+  };
+
+  const handleDeleteItem = (itemId: number) => {
+    const newItems = deleteItemFromCart(cartItems, itemId);
+    updateCart(newItems);
+  };
+
+  const handleCheckout = () => {
+    setShowCartDrawer(false);
+    // TODO: Implement checkout flow
+    alert("Checkout functionality coming soon!");
   };
 
   // Group menu items by category
@@ -104,6 +156,9 @@ export default function MenuPage() {
     return acc;
   }, {} as Record<string, MenuItem[]>);
 
+  const totalItems = getCartItemCount(cartItems);
+  const totalPrice = getCartTotal(cartItems);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -114,13 +169,13 @@ export default function MenuPage() {
               <h1 className="text-2xl font-bold">Table {tableNumber}</h1>
               <p className="text-sm text-gray-600">Browse our menu</p>
             </div>
-            {isAuthenticated && getTotalItems() > 0 && (
+            {isAuthenticated && totalItems > 0 && (
               <div className="flex items-center gap-2">
                 <div className="text-right">
-                  <div className="text-sm font-medium">{getTotalItems()} items</div>
-                  <div className="text-lg font-bold">₹{getTotalPrice()}</div>
+                  <div className="text-sm font-medium">{totalItems} items</div>
+                  <div className="text-lg font-bold">${totalPrice.toFixed(2)}</div>
                 </div>
-                <Button>View Cart</Button>
+                <Button onClick={() => setShowCartDrawer(true)}>View Cart</Button>
               </div>
             )}
           </div>
@@ -166,7 +221,7 @@ export default function MenuPage() {
                 <h2 className="text-2xl font-bold capitalize">{category}</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   {items.map((item) => {
-                    const qty = getCartItemCount(item.id!);
+                    const qty = getItemQuantity(cartItems, item.id!);
                     return (
                       <div
                         key={item.id}
@@ -191,7 +246,7 @@ export default function MenuPage() {
                             </p>
                             <div className="flex items-center justify-between mt-2">
                               <span className="font-bold text-lg">
-                                ₹{item.price.toFixed(2)}
+                                ${item.price.toFixed(2)}
                               </span>
                               {isAuthenticated && (
                                 <div className="flex items-center gap-2">
@@ -200,7 +255,7 @@ export default function MenuPage() {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => removeFromCart(item.id!)}
+                                        onClick={() => handleRemoveFromCart(item.id!)}
                                         className="h-8 w-8 p-0"
                                       >
                                         -
@@ -210,7 +265,7 @@ export default function MenuPage() {
                                       </span>
                                       <Button
                                         size="sm"
-                                        onClick={() => addToCart(item.id!)}
+                                        onClick={() => handleAddToCart(item)}
                                         className="h-8 w-8 p-0"
                                       >
                                         +
@@ -219,7 +274,7 @@ export default function MenuPage() {
                                   ) : (
                                     <Button
                                       size="sm"
-                                      onClick={() => addToCart(item.id!)}
+                                      onClick={() => handleAddToCart(item)}
                                     >
                                       Add
                                     </Button>
@@ -255,6 +310,16 @@ export default function MenuPage() {
           }
         }}
         onSuccess={handleAuthSuccess}
+      />
+
+      {/* Cart Drawer */}
+      <CartDrawer
+        open={showCartDrawer}
+        onClose={() => setShowCartDrawer(false)}
+        items={cartItems}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemoveItem={handleDeleteItem}
+        onCheckout={handleCheckout}
       />
     </div>
   );

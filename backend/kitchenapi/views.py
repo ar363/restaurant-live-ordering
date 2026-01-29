@@ -8,6 +8,10 @@ from typing import List, Optional
 import jwt
 from datetime import datetime, timedelta
 from django.conf import settings
+import redis
+import json
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 api = NinjaAPI()
 
@@ -15,6 +19,13 @@ api = NinjaAPI()
 SECRET_KEY = getattr(settings, 'SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 JWT_EXP_DELTA_SECONDS = 60 * 60 * 24 * 7  # 7 days
+
+# Redis Configuration
+REDIS_HOST = getattr(settings, 'REDIS_HOST', 'localhost')
+REDIS_PORT = getattr(settings, 'REDIS_PORT', 6379)
+REDIS_DB = getattr(settings, 'REDIS_DB', 0)
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+CART_EXPIRY = 3600  # 1 hour
 
 # Schemas
 class TokenAuth(HttpBearer):
@@ -89,6 +100,25 @@ class AuthResponseSchema(Schema):
 
 class UserExistsSchema(Schema):
     exists: bool
+
+class CartItemSchema(Schema):
+    menu_item_id: int
+    menu_item: MenuItemSchema
+    quantity: int
+
+class CartDataSchema(Schema):
+    items: List[CartItemSchema]
+    last_updated: int
+
+class CartSyncRequestSchema(Schema):
+    user_id: int
+    cart: CartDataSchema
+
+class CartSyncResponseSchema(Schema):
+    success: bool
+
+class CartGetResponseSchema(Schema):
+    cart: Optional[CartDataSchema] = None
 
 # Auth endpoints
 @api.post("/auth/check-user", auth=None, response=UserExistsSchema)
@@ -415,3 +445,74 @@ def kitchen_dashboard(request):
 @api.get("/ping", auth=None)
 def ping(request):
     return {"ping": "pong"}
+
+# Cart endpoints
+@api.post("/cart/sync", auth=TokenAuth(), response=CartSyncResponseSchema)
+def sync_cart(request, data: CartSyncRequestSchema):
+    """Sync cart data to Redis with 1 hour expiry"""
+    try:
+        user_id = data.user_id
+        cart_key = f"cart:{user_id}"
+        last_updated_key = f"cart:{user_id}:last_updated"
+        
+        # Store cart data
+        cart_json = json.dumps({
+            "items": [
+                {
+                    "menu_item_id": item.menu_item_id,
+                    "menu_item": {
+                        "id": item.menu_item.id,
+                        "name": item.menu_item.name,
+                        "description": item.menu_item.description,
+                        "price": float(item.menu_item.price),
+                        "category": item.menu_item.category,
+                        "is_available": item.menu_item.is_available,
+                        "image": item.menu_item.image,
+                    },
+                    "quantity": item.quantity,
+                }
+                for item in data.cart.items
+            ],
+            "last_updated": data.cart.last_updated,
+        })
+        
+        redis_client.setex(cart_key, CART_EXPIRY, cart_json)
+        redis_client.setex(last_updated_key, CART_EXPIRY, str(data.cart.last_updated))
+        
+        # Broadcast cart update via WebSocket
+        channel_layer = get_channel_layer()
+        cart_data = json.loads(cart_json)
+        async_to_sync(channel_layer.group_send)(
+            f'cart_{user_id}',
+            {
+                'type': 'cart_update',
+                'cart_data': cart_data
+            }
+        )
+        
+        return {"success": True}
+    except Exception as e:
+        print(f"Error syncing cart: {e}")
+        return {"success": False}
+
+@api.get("/cart/sync", auth=TokenAuth(), response=CartGetResponseSchema)
+def get_cart(request, user_id: int, last_updated: Optional[int] = None):
+    """Get cart data from Redis. Returns null if last_updated matches (no changes)."""
+    try:
+        cart_key = f"cart:{user_id}"
+        cart_data = redis_client.get(cart_key)
+        
+        if not cart_data:
+            return {"cart": None}
+        
+        cart_dict = json.loads(cart_data)
+        
+        # If last_updated is provided and matches, return null (no changes)
+        if last_updated is not None and cart_dict.get("last_updated") == last_updated:
+            return {"cart": None}
+        
+        return {"cart": cart_dict}
+    except Exception as e:
+        print(f"Error fetching cart: {e}")
+        return {"cart": None}
+
