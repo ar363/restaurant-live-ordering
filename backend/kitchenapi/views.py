@@ -43,7 +43,7 @@ class MenuItemSchema(Schema):
     price: float
     category: str
     is_available: bool = True
-    image: str = None
+    image: Optional[str] = None
 
 class TableSchema(Schema):
     id: int = None
@@ -54,7 +54,7 @@ class TableSchema(Schema):
 class OrderItemSchema(Schema):
     id: int = None
     menu_item_id: int
-    menu_item_name: str = None
+    menu_item_name: Optional[str] = None
     quantity: int
     price_at_order: float
     special_instructions: str = ""
@@ -65,10 +65,10 @@ class OrderSchema(Schema):
     table_number: int = None
     status: str = "pending"
     special_instructions: str = ""
-    payment_method: str = None
+    payment_method: Optional[str] = None
     payment_status: bool = False
     total_amount: float = 0
-    username: str = None
+    username: Optional[str] = None
     items: List[OrderItemSchema] = []
 
 class CreateOrderSchema(Schema):

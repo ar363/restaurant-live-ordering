@@ -236,7 +236,7 @@ export interface components {
              */
             is_available: boolean;
             /** Image */
-            image?: string;
+            image?: string | null;
         };
         /** TableSchema */
         TableSchema: {
@@ -262,7 +262,7 @@ export interface components {
             /** Menu Item Id */
             menu_item_id: number;
             /** Menu Item Name */
-            menu_item_name?: string;
+            menu_item_name?: string | null;
             /** Quantity */
             quantity: number;
             /** Price At Order */
@@ -292,7 +292,7 @@ export interface components {
              */
             special_instructions: string;
             /** Payment Method */
-            payment_method?: string;
+            payment_method?: string | null;
             /**
              * Payment Status
              * @default false
@@ -304,7 +304,7 @@ export interface components {
              */
             total_amount: number;
             /** Username */
-            username?: string;
+            username?: string | null;
             /**
              * Items
              * @default []
