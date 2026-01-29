@@ -7,10 +7,12 @@ import { CartDrawer } from "@/components/cart-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { apiClient, auth } from "@/lib/api";
+import { formatPrice } from "@/lib/format";
 import {
   loadCartFromLocalStorage,
   saveCartToLocalStorage,
   syncCartToServer,
+  fetchCartFromServer,
   connectCartWebSocket,
   getCartTotal,
   getCartItemCount,
@@ -95,7 +97,7 @@ export default function MenuPage() {
     }
   };
 
-  const handleAuthSuccess = () => {
+  const handleAuthSuccess = async () => {
     setIsAuthenticated(true);
     setShowAuthDrawer(false);
     
@@ -104,7 +106,25 @@ export default function MenuPage() {
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        setUserId(payload.user_id || null);
+        const userId = payload.user_id || null;
+        setUserId(userId);
+        
+        // Fetch cart from server and merge with local cart
+        if (userId) {
+          const serverCart = await fetchCartFromServer(userId);
+          if (serverCart && serverCart.items.length > 0) {
+            // Server has cart data - use it
+            setCartItems(serverCart.items);
+            saveCartToLocalStorage(serverCart.items);
+          } else {
+            // No server cart - sync local cart to server
+            const localCart = loadCartFromLocalStorage();
+            if (localCart.length > 0) {
+              const lastUpdated = saveCartToLocalStorage(localCart);
+              await syncCartToServer(userId, localCart, lastUpdated);
+            }
+          }
+        }
       } catch (e) {
         console.error("Error parsing token:", e);
       }
@@ -173,7 +193,7 @@ export default function MenuPage() {
               <div className="flex items-center gap-2">
                 <div className="text-right">
                   <div className="text-sm font-medium">{totalItems} items</div>
-                  <div className="text-lg font-bold">${totalPrice.toFixed(2)}</div>
+                  <div className="text-lg font-bold">₹{formatPrice(totalPrice)}</div>
                 </div>
                 <Button onClick={() => setShowCartDrawer(true)}>View Cart</Button>
               </div>
@@ -246,7 +266,7 @@ export default function MenuPage() {
                             </p>
                             <div className="flex items-center justify-between mt-2">
                               <span className="font-bold text-lg">
-                                ${item.price.toFixed(2)}
+                                ₹{formatPrice(item.price)}
                               </span>
                               {isAuthenticated && (
                                 <div className="flex items-center gap-2">

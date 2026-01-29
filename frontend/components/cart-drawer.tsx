@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { CartItem, getCartTotal, getCartItemCount } from "@/lib/cart";
+import { formatPrice } from "@/lib/format";
 import { Minus, Plus, Trash2 } from "lucide-react";
 
 interface CartDrawerProps {
@@ -76,7 +77,7 @@ export function CartDrawer({
                     )}
                     <div className="flex items-center justify-between mt-2">
                       <span className="font-bold text-lg">
-                        ${(item.menu_item.price * item.quantity).toFixed(2)}
+                        ₹{formatPrice(item.menu_item.price * item.quantity)}
                       </span>
                       <div className="flex items-center gap-2">
                         <Button
@@ -125,7 +126,7 @@ export function CartDrawer({
               <div className="space-y-4">
                 <div className="flex justify-between items-center text-lg">
                   <span className="font-semibold">Total:</span>
-                  <span className="font-bold text-2xl">${total.toFixed(2)}</span>
+                  <span className="font-bold text-2xl">₹{formatPrice(total)}</span>
                 </div>
                 <Button onClick={onCheckout} className="w-full h-12 text-lg">
                   Proceed to Checkout
