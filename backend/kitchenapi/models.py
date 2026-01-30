@@ -34,8 +34,9 @@ class Order(models.Model):
     ]
     
     PAYMENT_METHOD_CHOICES = [
-        ('counter', 'Pay at Counter'),
-        ('online', 'Pay Online'),
+        ('cash', 'Pay in Cash'),
+        ('upi', 'UPI Payment'),
+        ('card', 'Card Payment'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')

@@ -6,7 +6,7 @@ user flow:
     scans qr on table OR visits website & enters table number
     picks the items he wants , adds to cart
     checks cart , adds additional instructions if any
-    prompt to enter email/password for login/signup
+    prompt to enter phone/pin for login/signup
     clicks order. it is sent to the kitchen
     user can track the order status , also there is option to order more
     finally after eating : user selects either to pay at counter / pay online

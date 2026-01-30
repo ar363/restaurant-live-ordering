@@ -99,7 +99,9 @@ export async function fetchCartFromServer(
 // Cart WebSocket for real-time cross-device sync
 export function connectCartWebSocket(
   userId: number,
-  onCartUpdate: (items: CartItem[]) => void
+  onCartUpdate: (items: CartItem[]) => void,
+  onCheckoutStatus?: (isInProgress: boolean, byUserId: number | null, deviceId?: string | null) => void,
+  onCheckoutComplete?: () => void
 ) {
   const token = auth.getToken();
   if (!token) {
@@ -116,6 +118,7 @@ export function connectCartWebSocket(
   ws.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data);
+      
       if (message.type === "cart_update" && message.data) {
         const { items, last_updated } = message.data;
         
@@ -131,9 +134,20 @@ export function connectCartWebSocket(
           onCartUpdate(items);
           saveCartToLocalStorage(items);
         }
+      } else if (message.type === "checkout_status" && onCheckoutStatus) {
+        onCheckoutStatus(
+          message.is_checkout_in_progress,
+          message.checkout_by_user_id,
+          message.device_id
+        );
+      } else if (message.type === "checkout_complete" && onCheckoutComplete) {
+        // Clear local cart on checkout completion
+        clearCart();
+        onCartUpdate([]);
+        onCheckoutComplete();
       }
     } catch (error) {
-      console.error("Error processing cart update:", error);
+      console.error("Error processing WebSocket message:", error);
     }
   };
   

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AuthDrawer } from "@/components/auth-drawer";
 import { CartDrawer } from "@/components/cart-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +29,7 @@ type MenuItem = components["schemas"]["MenuItemSchema"];
 
 export default function MenuPage() {
   const params = useParams();
+  const router = useRouter();
   const tableNumber = params.tableNumber as string;
   
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -38,6 +39,7 @@ export default function MenuPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [isCheckoutInProgress, setIsCheckoutInProgress] = useState(false);
 
   useEffect(() => {
     // Check authentication status
@@ -72,12 +74,27 @@ export default function MenuPage() {
   useEffect(() => {
     // Connect to WebSocket for real-time cart updates if authenticated
     if (userId) {
-      const disconnect = connectCartWebSocket(userId, (items) => {
-        setCartItems(items);
-      });
+      const disconnect = connectCartWebSocket(
+        userId,
+        (items) => {
+          setCartItems(items);
+        },
+        (isInProgress, byUserId, deviceId) => {
+          setIsCheckoutInProgress(isInProgress);
+          // Redirect to checkout page when checkout starts
+          if (isInProgress) {
+            router.push(`/${tableNumber}/checkout`);
+          }
+        },
+        () => {
+          // Checkout completed
+          setIsCheckoutInProgress(false);
+          alert("Order placed successfully!");
+        }
+      );
       return () => disconnect();
     }
-  }, [userId]);
+  }, [userId, tableNumber, router]);
 
   const fetchMenuItems = async () => {
     setLoading(true);
@@ -163,8 +180,7 @@ export default function MenuPage() {
 
   const handleCheckout = () => {
     setShowCartDrawer(false);
-    // TODO: Implement checkout flow
-    alert("Checkout functionality coming soon!");
+    router.push(`/${tableNumber}/checkout`);
   };
 
   // Group menu items by category
@@ -340,6 +356,7 @@ export default function MenuPage() {
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleDeleteItem}
         onCheckout={handleCheckout}
+        isCheckoutInProgress={isCheckoutInProgress}
       />
     </div>
   );

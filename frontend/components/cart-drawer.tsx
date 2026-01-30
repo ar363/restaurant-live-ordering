@@ -20,6 +20,7 @@ interface CartDrawerProps {
   onUpdateQuantity: (itemId: number, quantity: number) => void;
   onRemoveItem: (itemId: number) => void;
   onCheckout: () => void;
+  isCheckoutInProgress?: boolean;
 }
 
 export function CartDrawer({
@@ -29,6 +30,7 @@ export function CartDrawer({
   onUpdateQuantity,
   onRemoveItem,
   onCheckout,
+  isCheckoutInProgress = false,
 }: CartDrawerProps) {
   const total = getCartTotal(items);
   const itemCount = getCartItemCount(items);
@@ -43,6 +45,17 @@ export function CartDrawer({
         </DrawerHeader>
 
         <div className="flex-1 overflow-y-auto px-6 max-h-[60vh]">
+          {isCheckoutInProgress && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 font-medium text-center">
+                🛒 Checkout in progress on another device
+              </p>
+              <p className="text-yellow-700 text-sm text-center mt-1">
+                Cart is temporarily locked
+              </p>
+            </div>
+          )}
+          
           {items.length === 0 ? (
             <div className="py-12 text-center text-gray-500">
               Your cart is empty
@@ -87,6 +100,7 @@ export function CartDrawer({
                             onUpdateQuantity(item.menu_item_id, item.quantity - 1)
                           }
                           className="h-8 w-8 p-0"
+                          disabled={isCheckoutInProgress}
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
@@ -99,6 +113,7 @@ export function CartDrawer({
                             onUpdateQuantity(item.menu_item_id, item.quantity + 1)
                           }
                           className="h-8 w-8 p-0"
+                          disabled={isCheckoutInProgress}
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
@@ -107,6 +122,7 @@ export function CartDrawer({
                           size="sm"
                           onClick={() => onRemoveItem(item.menu_item_id)}
                           className="h-8 w-8 p-0 ml-2"
+                          disabled={isCheckoutInProgress}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -128,8 +144,12 @@ export function CartDrawer({
                   <span className="font-semibold">Total:</span>
                   <span className="font-bold text-2xl">₹{formatPrice(total)}</span>
                 </div>
-                <Button onClick={onCheckout} className="w-full h-12 text-lg">
-                  Proceed to Checkout
+                <Button 
+                  onClick={onCheckout} 
+                  className="w-full h-12 text-lg"
+                  disabled={isCheckoutInProgress}
+                >
+                  {isCheckoutInProgress ? "Checkout in Progress..." : "Proceed to Checkout"}
                 </Button>
                 <Button
                   variant="outline"

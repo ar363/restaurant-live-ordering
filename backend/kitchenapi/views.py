@@ -120,6 +120,20 @@ class CartSyncResponseSchema(Schema):
 class CartGetResponseSchema(Schema):
     cart: Optional[CartDataSchema] = None
 
+class CheckoutStatusSchema(Schema):
+    is_checkout_in_progress: bool
+    checkout_by_user_id: Optional[int] = None
+    device_id: Optional[str] = None
+
+class StartCheckoutSchema(Schema):
+    user_id: int
+
+class CreateOrderFromCartSchema(Schema):
+    user_id: int
+    table_number: int
+    payment_method: str  # "upi", "card", or "cash"
+    special_instructions: str = ""
+
 # Auth endpoints
 @api.post("/auth/check-user", auth=None, response=UserExistsSchema)
 def check_user_exists(request, username: str):
@@ -515,4 +529,216 @@ def get_cart(request, user_id: int, last_updated: Optional[int] = None):
     except Exception as e:
         print(f"Error fetching cart: {e}")
         return {"cart": None}
+
+# Checkout endpoints
+@api.post("/checkout/start", auth=TokenAuth(), response=CheckoutStatusSchema)
+def start_checkout(request, data: StartCheckoutSchema):
+    """Start checkout process - locks the cart for all devices"""
+    try:
+        user_id = data.user_id
+        checkout_key = f"checkout:{user_id}"
+        device_id_key = f"checkout_device:{user_id}"
+        
+        # Get device identifier from request (use a simple timestamp + random)
+        import time
+        device_id = str(time.time())
+        
+        # Check if checkout already in progress
+        existing = redis_client.get(checkout_key)
+        if existing:
+            # Return existing device ID
+            existing_device = redis_client.get(device_id_key)
+            return {
+                "is_checkout_in_progress": True, 
+                "checkout_by_user_id": user_id,
+                "device_id": existing_device
+            }
+        
+        # Set checkout lock with 60 second expiry
+        redis_client.setex(checkout_key, 60, str(user_id))
+        redis_client.setex(device_id_key, 60, device_id)
+        
+        # Broadcast checkout status via WebSocket
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'cart_{user_id}',
+            {
+                'type': 'checkout_status',
+                'is_checkout_in_progress': True,
+                'checkout_by_user_id': user_id,
+                'device_id': device_id
+            }
+        )
+        
+        return {
+            "is_checkout_in_progress": True, 
+            "checkout_by_user_id": user_id,
+            "device_id": device_id
+        }
+    except Exception as e:
+        print(f"Error starting checkout: {e}")
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None}
+
+@api.get("/checkout/status", auth=TokenAuth(), response=CheckoutStatusSchema)
+def get_checkout_status(request, user_id: int):
+    """Get checkout status for a user"""
+    try:
+        checkout_key = f"checkout:{user_id}"
+        device_id_key = f"checkout_device:{user_id}"
+        checkout_data = redis_client.get(checkout_key)
+        
+        if checkout_data:
+            device_id = redis_client.get(device_id_key)
+            return {
+                "is_checkout_in_progress": True, 
+                "checkout_by_user_id": int(checkout_data),
+                "device_id": device_id
+            }
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+    except Exception as e:
+        print(f"Error getting checkout status: {e}")
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+
+@api.post("/checkout/heartbeat", auth=TokenAuth(), response=CheckoutStatusSchema)
+def checkout_heartbeat(request, user_id: int, device_id: Optional[str] = None):
+    """Keep checkout lock alive - call every 15 seconds from active checkout device"""
+    try:
+        checkout_key = f"checkout:{user_id}"
+        device_id_key = f"checkout_device:{user_id}"
+        checkout_data = redis_client.get(checkout_key)
+        
+        if checkout_data:
+            # Refresh the expiry to 60 seconds
+            redis_client.setex(checkout_key, 60, str(user_id))
+            if device_id:
+                redis_client.setex(device_id_key, 60, device_id)
+            return {
+                "is_checkout_in_progress": True, 
+                "checkout_by_user_id": user_id,
+                "device_id": device_id
+            }
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+    except Exception as e:
+        print(f"Error in checkout heartbeat: {e}")
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+
+@api.post("/checkout/cancel", auth=TokenAuth(), response=CheckoutStatusSchema)
+def cancel_checkout(request, user_id: int):
+    """Cancel checkout process"""
+    try:
+        checkout_key = f"checkout:{user_id}"
+        device_id_key = f"checkout_device:{user_id}"
+        redis_client.delete(checkout_key)
+        redis_client.delete(device_id_key)
+        
+        # Broadcast checkout cancellation via WebSocket
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'cart_{user_id}',
+            {
+                'type': 'checkout_status',
+                'is_checkout_in_progress': False,
+                'checkout_by_user_id': None,
+                'device_id': None
+            }
+        )
+        
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+    except Exception as e:
+        print(f"Error canceling checkout: {e}")
+        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+
+@api.post("/checkout/complete", auth=TokenAuth(), response={200: OrderSchema, 400: ErrorSchema})
+def complete_checkout(request, data: CreateOrderFromCartSchema):
+    """Complete checkout - create order from cart and clear cart"""
+    try:
+        user_id = data.user_id
+        
+        # Get cart data
+        cart_key = f"cart:{user_id}"
+        cart_data = redis_client.get(cart_key)
+        
+        if not cart_data:
+            return 400, {"error": "Cart is empty"}
+        
+        cart_dict = json.loads(cart_data)
+        cart_items = cart_dict.get("items", [])
+        
+        if not cart_items:
+            return 400, {"error": "Cart is empty"}
+        
+        # Get or create table
+        table, created = Table.objects.get_or_create(
+            table_number=data.table_number,
+            defaults={"is_occupied": True}
+        )
+        
+        # Calculate total
+        total_amount = sum(
+            item["menu_item"]["price"] * item["quantity"]
+            for item in cart_items
+        )
+        
+        # Create order
+        order = Order.objects.create(
+            user=request.auth,
+            table=table,
+            status="pending",
+            special_instructions=data.special_instructions,
+            payment_method=data.payment_method,
+            payment_status=(data.payment_method != "cash"),  # Cash is unpaid, UPI/Card are paid
+            total_amount=total_amount
+        )
+        
+        # Create order items
+        for item in cart_items:
+            menu_item = MenuItem.objects.get(id=item["menu_item_id"])
+            OrderItem.objects.create(
+                order=order,
+                menu_item=menu_item,
+                quantity=item["quantity"],
+                price_at_order=item["menu_item"]["price"]
+            )
+        
+        # Clear cart and checkout status
+        redis_client.delete(cart_key)
+        redis_client.delete(f"cart:{user_id}:last_updated")
+        redis_client.delete(f"checkout:{user_id}")
+        
+        # Broadcast cart clear and checkout completion via WebSocket
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'cart_{user_id}',
+            {
+                'type': 'checkout_complete',
+                'order_id': order.id
+            }
+        )
+        
+        return {
+            "id": order.id,
+            "table_id": table.id,
+            "table_number": table.table_number,
+            "status": order.status,
+            "special_instructions": order.special_instructions,
+            "payment_method": order.payment_method,
+            "payment_status": order.payment_status,
+            "total_amount": float(order.total_amount),
+            "username": order.user.username,
+            "items": [
+                {
+                    "id": item.id,
+                    "menu_item_id": item.menu_item.id,
+                    "menu_item_name": item.menu_item.name,
+                    "quantity": item.quantity,
+                    "price_at_order": float(item.price_at_order),
+                    "special_instructions": item.special_instructions
+                }
+                for item in order.items.all()
+            ]
+        }
+    except Exception as e:
+        print(f"Error completing checkout: {e}")
+        return 400, {"error": str(e)}
+
 
