@@ -59,7 +59,6 @@ class MenuItemSchema(Schema):
 class TableSchema(Schema):
     id: int = None
     table_number: int
-    qr_code: str = ""
     is_occupied: bool = False
 
 class OrderItemSchema(Schema):
@@ -81,6 +80,8 @@ class OrderSchema(Schema):
     total_amount: float = 0
     username: Optional[str] = None
     items: List[OrderItemSchema] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 class CreateOrderSchema(Schema):
     table_id: int
@@ -133,6 +134,13 @@ class CreateOrderFromCartSchema(Schema):
     table_number: int
     payment_method: str  # "upi", "card", or "cash"
     special_instructions: str = ""
+
+class UpdateOrderStatusSchema(Schema):
+    status: str
+
+class KitchenLoginSchema(Schema):
+    username: str
+    password: str
 
 # Auth endpoints
 @api.post("/auth/check-user", auth=None, response=UserExistsSchema)
@@ -426,8 +434,141 @@ def update_order_status(request, order_id: int, data: UpdateOrderStatusSchema):
     }
 
 # Kitchen dashboard
+@api.post("/kitchen/login", auth=None, response={200: AuthResponseSchema, 401: ErrorSchema, 403: ErrorSchema})
+def kitchen_login(request, data: KitchenLoginSchema):
+    """Login for kitchen staff only"""
+    user = authenticate(username=data.username, password=data.password)
+    if user:
+        if not user.is_staff:
+            return 403, {"error": "Staff access required"}
+        
+        payload = {
+            'user_id': user.id,
+            'username': user.username,
+            'is_staff': user.is_staff,
+            'exp': datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+        }
+        token = jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
+        
+        return {
+            "token": token,
+            "user": {"id": user.id, "username": user.username, "is_staff": user.is_staff}
+        }
+    return 401, {"error": "Invalid credentials"}
+
+@api.get("/kitchen/orders", response=List[OrderSchema], auth=TokenAuth())
+def get_kitchen_orders(request):
+    """Get all active orders for kitchen dashboard"""
+    if not request.auth.is_staff:
+        return []
+    
+    orders = Order.objects.exclude(status__in=['completed', 'cancelled']).order_by('created_at')
+    
+    result = []
+    for order in orders:
+        result.append({
+            "id": order.id,
+            "table_id": order.table.id if order.table else None,
+            "table_number": order.table.table_number if order.table else None,
+            "status": order.status,
+            "special_instructions": order.special_instructions,
+            "payment_method": order.payment_method,
+            "payment_status": order.payment_status,
+            "total_amount": float(order.total_amount),
+            "username": order.user.username,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+            "items": [
+                {
+                    "id": item.id,
+                    "menu_item_id": item.menu_item.id,
+                    "menu_item_name": item.menu_item.name,
+                    "quantity": item.quantity,
+                    "price_at_order": float(item.price_at_order),
+                    "special_instructions": item.special_instructions
+                }
+                for item in order.items.all()
+            ]
+        })
+    return result
+
+@api.put("/kitchen/orders/{order_id}/status", auth=TokenAuth(), response={200: OrderSchema, 403: ErrorSchema, 404: ErrorSchema})
+def update_order_status(request, order_id: int, data: UpdateOrderStatusSchema):
+    """Update order status"""
+    if not request.auth.is_staff:
+        return 403, {"error": "Staff access required"}
+    
+    try:
+        order = Order.objects.get(id=order_id)
+        order.status = data.status
+        
+        # If moving to delivered and payment method is not cash, mark as completed
+        if data.status == 'delivered' and order.payment_method != 'cash':
+            order.status = 'completed'
+        
+        order.save()
+        
+        # Broadcast order update via WebSocket
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            'kitchen',
+            {
+                'type': 'order_update',
+                'order': {
+                    "id": order.id,
+                    "table_id": order.table.id if order.table else None,
+                    "table_number": order.table.table_number if order.table else None,
+                    "status": order.status,
+                    "special_instructions": order.special_instructions,
+                    "payment_method": order.payment_method,
+                    "payment_status": order.payment_status,
+                    "total_amount": float(order.total_amount),
+                    "username": order.user.username,
+                    "items": [
+                        {
+                            "id": item.id,
+                            "menu_item_id": item.menu_item.id,
+                            "menu_item_name": item.menu_item.name,
+                            "quantity": item.quantity,
+                            "price_at_order": float(item.price_at_order),
+                            "special_instructions": item.special_instructions
+                        }
+                        for item in order.items.all()
+                    ]
+                }
+            }
+        )
+        
+        return {
+            "id": order.id,
+            "table_id": order.table.id if order.table else None,
+            "table_number": order.table.table_number if order.table else None,
+            "status": order.status,
+            "special_instructions": order.special_instructions,
+            "payment_method": order.payment_method,
+            "payment_status": order.payment_status,
+            "total_amount": float(order.total_amount),
+            "username": order.user.username,
+            "items": [
+                {
+                    "id": item.id,
+                    "menu_item_id": item.menu_item.id,
+                    "menu_item_name": item.menu_item.name,
+                    "quantity": item.quantity,
+                    "price_at_order": float(item.price_at_order),
+                    "special_instructions": item.special_instructions
+                }
+                for item in order.items.all()
+            ]
+        }
+    except Order.DoesNotExist:
+        return 404, {"error": "Order not found"}
+
 @api.get("/kitchen/dashboard", response=List[OrderSchema], auth=TokenAuth())
 def kitchen_dashboard(request):
+    if not request.auth.is_staff:
+        return []
+    
     orders = Order.objects.exclude(status__in=['completed', 'cancelled']).order_by('-created_at')
     
     result = []
@@ -704,6 +845,7 @@ def complete_checkout(request, data: CreateOrderFromCartSchema):
         redis_client.delete(cart_key)
         redis_client.delete(f"cart:{user_id}:last_updated")
         redis_client.delete(f"checkout:{user_id}")
+        redis_client.delete(f"checkout_device:{user_id}")
         
         # Broadcast cart clear and checkout completion via WebSocket
         channel_layer = get_channel_layer()
@@ -712,6 +854,36 @@ def complete_checkout(request, data: CreateOrderFromCartSchema):
             {
                 'type': 'checkout_complete',
                 'order_id': order.id
+            }
+        )
+        
+        # Broadcast new order to kitchen dashboard
+        async_to_sync(channel_layer.group_send)(
+            'kitchen',
+            {
+                'type': 'new_order',
+                'order': {
+                    "id": order.id,
+                    "table_id": table.id,
+                    "table_number": table.table_number,
+                    "status": order.status,
+                    "special_instructions": order.special_instructions,
+                    "payment_method": order.payment_method,
+                    "payment_status": order.payment_status,
+                    "total_amount": float(order.total_amount),
+                    "username": order.user.username,
+                    "items": [
+                        {
+                            "id": item.id,
+                            "menu_item_id": item.menu_item.id,
+                            "menu_item_name": item.menu_item.name,
+                            "quantity": item.quantity,
+                            "price_at_order": float(item.price_at_order),
+                            "special_instructions": item.special_instructions
+                        }
+                        for item in order.items.all()
+                    ]
+                }
             }
         )
         

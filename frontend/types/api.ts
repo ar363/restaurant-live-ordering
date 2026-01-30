@@ -178,6 +178,66 @@ export interface paths {
         patch: operations["kitchenapi_views_update_order_status"];
         trace?: never;
     };
+    "/api/v1/kitchen/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Kitchen Login
+         * @description Login for kitchen staff only
+         */
+        post: operations["kitchenapi_views_kitchen_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kitchen/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Kitchen Orders
+         * @description Get all active orders for kitchen dashboard
+         */
+        get: operations["kitchenapi_views_get_kitchen_orders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kitchen/orders/{order_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Order Status
+         * @description Update order status
+         */
+        put: operations["kitchenapi_views_update_order_status"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/kitchen/dashboard": {
         parameters: {
             query?: never;
@@ -221,7 +281,7 @@ export interface paths {
         };
         /**
          * Get Cart
-         * @description Get cart data from Redis
+         * @description Get cart data from Redis. Returns null if last_updated matches (no changes).
          */
         get: operations["kitchenapi_views_get_cart"];
         put?: never;
@@ -230,6 +290,106 @@ export interface paths {
          * @description Sync cart data to Redis with 1 hour expiry
          */
         post: operations["kitchenapi_views_sync_cart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkout/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Checkout
+         * @description Start checkout process - locks the cart for all devices
+         */
+        post: operations["kitchenapi_views_start_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkout/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Checkout Status
+         * @description Get checkout status for a user
+         */
+        get: operations["kitchenapi_views_get_checkout_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkout/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout Heartbeat
+         * @description Keep checkout lock alive - call every 15 seconds from active checkout device
+         */
+        post: operations["kitchenapi_views_checkout_heartbeat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkout/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Checkout
+         * @description Cancel checkout process
+         */
+        post: operations["kitchenapi_views_cancel_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkout/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Checkout
+         * @description Complete checkout - create order from cart and clear cart
+         */
+        post: operations["kitchenapi_views_complete_checkout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -370,6 +530,10 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["OrderItemSchema"][];
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** CreateOrderSchema */
         CreateOrderSchema: {
@@ -391,6 +555,13 @@ export interface components {
         UpdateOrderStatusSchema: {
             /** Status */
             status: string;
+        };
+        /** KitchenLoginSchema */
+        KitchenLoginSchema: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
         };
         /** CartSyncResponseSchema */
         CartSyncResponseSchema: {
@@ -421,6 +592,34 @@ export interface components {
         /** CartGetResponseSchema */
         CartGetResponseSchema: {
             cart?: components["schemas"]["CartDataSchema"] | null;
+        };
+        /** CheckoutStatusSchema */
+        CheckoutStatusSchema: {
+            /** Is Checkout In Progress */
+            is_checkout_in_progress: boolean;
+            /** Checkout By User Id */
+            checkout_by_user_id?: number | null;
+            /** Device Id */
+            device_id?: string | null;
+        };
+        /** StartCheckoutSchema */
+        StartCheckoutSchema: {
+            /** User Id */
+            user_id: number;
+        };
+        /** CreateOrderFromCartSchema */
+        CreateOrderFromCartSchema: {
+            /** User Id */
+            user_id: number;
+            /** Table Number */
+            table_number: number;
+            /** Payment Method */
+            payment_method: string;
+            /**
+             * Special Instructions
+             * @default
+             */
+            special_instructions: string;
         };
     };
     responses: never;
@@ -814,6 +1013,112 @@ export interface operations {
             };
         };
     };
+    kitchenapi_views_kitchen_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KitchenLoginSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponseSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_get_kitchen_orders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSchema"][];
+                };
+            };
+        };
+    };
+    kitchenapi_views_update_order_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOrderStatusSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSchema"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+        };
+    };
     kitchenapi_views_kitchen_dashboard: {
         parameters: {
             query?: never;
@@ -856,6 +1161,7 @@ export interface operations {
         parameters: {
             query: {
                 user_id: number;
+                last_updated?: number | null;
             };
             header?: never;
             path?: never;
@@ -894,6 +1200,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CartSyncResponseSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_start_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartCheckoutSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutStatusSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_get_checkout_status: {
+        parameters: {
+            query: {
+                user_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutStatusSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_checkout_heartbeat: {
+        parameters: {
+            query: {
+                user_id: number;
+                device_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutStatusSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_cancel_checkout: {
+        parameters: {
+            query: {
+                user_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutStatusSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_complete_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrderFromCartSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSchema"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
                 };
             };
         };

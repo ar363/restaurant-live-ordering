@@ -3,7 +3,6 @@ from django.contrib.auth.models import User
 
 class Table(models.Model):
     table_number = models.IntegerField(unique=True)
-    qr_code = models.CharField(max_length=255, unique=True, blank=True)
     is_occupied = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

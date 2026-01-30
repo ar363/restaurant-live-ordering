@@ -18,14 +18,16 @@ class CartConsumer(AsyncWebsocketConsumer):
         # Authenticate using token
         token = params.get('token')
         if not token:
-            await self.close()
+            await self.accept()
+            await self.close(code=4001)
             return
         
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
             user_id = payload.get('user_id')
             if not user_id:
-                await self.close()
+                await self.accept()
+                await self.close(code=4002)
                 return
             
             self.user_id = user_id
@@ -39,7 +41,8 @@ class CartConsumer(AsyncWebsocketConsumer):
             
             await self.accept()
         except (jwt.ExpiredSignatureError, jwt.DecodeError):
-            await self.close()
+            await self.accept()
+            await self.close(code=4003)
 
     async def disconnect(self, close_code):
         # Leave room group
@@ -77,4 +80,66 @@ class CartConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'checkout_complete',
             'order_id': event['order_id']
+        }))
+
+
+class KitchenConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        query_string = self.scope.get('query_string', b'').decode()
+        params = dict(param.split('=') for param in query_string.split('&') if '=' in param)
+        
+        token = params.get('token')
+        if not token:
+            await self.accept()
+            await self.close(code=4001)
+            return
+        
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            is_staff = payload.get('is_staff', False)
+            
+            if not is_staff:
+                await self.accept()
+                await self.close(code=4003)
+                return
+            
+            self.user_id = payload.get('user_id')
+            self.room_group_name = 'kitchen'
+            
+            # Accept FIRST
+            await self.accept()
+            
+            # Then add to group
+            await self.channel_layer.group_add(
+                self.room_group_name,
+                self.channel_name
+            )
+        except (jwt.ExpiredSignatureError, jwt.DecodeError):
+            await self.accept()
+            await self.close(code=4002)
+
+    async def disconnect(self, close_code):
+        # Leave kitchen group
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(
+                self.room_group_name,
+                self.channel_name
+            )
+
+    async def receive(self, text_data):
+        # Handle incoming messages (if needed)
+        pass
+
+    # Receive new order
+    async def new_order(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'new_order',
+            'order': event['order']
+        }))
+    
+    # Receive order update
+    async def order_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'order_update',
+            'order': event['order']
         }))
