@@ -28,14 +28,14 @@ export default function KitchenLogin() {
       });
 
       if (apiError || !data) {
-        setError(apiError?.detail || "Login failed");
+        setError(apiError?.error || "Login failed");
         setLoading(false);
         return;
       }
 
       // Store token
       localStorage.setItem("kitchen_token", data.token);
-      localStorage.setItem("kitchen_staff_name", data.user.username || "Staff");
+      localStorage.setItem("kitchen_staff_name", data.user.username as string || "Staff");
 
       // Wait a bit to ensure localStorage is written before redirect
       setTimeout(() => {

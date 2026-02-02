@@ -205,15 +205,26 @@ export default function MenuPage() {
               <h1 className="text-2xl font-bold">Table {tableNumber}</h1>
               <p className="text-sm text-gray-600">Browse our menu</p>
             </div>
-            {isAuthenticated && totalItems > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="text-right">
-                  <div className="text-sm font-medium">{totalItems} items</div>
-                  <div className="text-lg font-bold">₹{formatPrice(totalPrice)}</div>
-                </div>
-                <Button onClick={() => setShowCartDrawer(true)}>View Cart</Button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {isAuthenticated && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => router.push(`/${tableNumber}/orders`)}
+                >
+                  Order History
+                </Button>
+              )}
+              {isAuthenticated && totalItems > 0 && (
+                <>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">{totalItems} items</div>
+                    <div className="text-lg font-bold">₹{formatPrice(totalPrice)}</div>
+                  </div>
+                  <Button onClick={() => setShowCartDrawer(true)}>View Cart</Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

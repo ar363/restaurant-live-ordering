@@ -192,9 +192,8 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Success - redirect to order confirmation
-      alert(`Order placed successfully! Order ID: ${data.id}`);
-      router.push(`/${tableNumber}`);
+      // Success - redirect to order status page
+      router.push(`/${tableNumber}/order/${data.id}`);
     } catch (error) {
       console.error("Error completing checkout:", error);
       alert("Failed to complete checkout. Please try again.");

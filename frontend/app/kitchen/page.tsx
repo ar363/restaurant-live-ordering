@@ -63,7 +63,7 @@ export default function KitchenDashboard() {
 
       if (error || !data) {
         console.error("Failed to fetch orders:", error);
-        if (error?.detail === "Invalid or expired token") {
+        if (error) {
           localStorage.removeItem("kitchen_token");
           localStorage.removeItem("kitchen_staff_name");
           router.push("/kitchen/login");
