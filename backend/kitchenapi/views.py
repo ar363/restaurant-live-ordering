@@ -123,11 +123,13 @@ class CartGetResponseSchema(Schema):
 
 class CheckoutStatusSchema(Schema):
     is_checkout_in_progress: bool
-    checkout_by_user_id: Optional[int] = None
-    device_id: Optional[str] = None
+    payment_method: Optional[str] = None
+    special_instructions: str = ""
 
 class StartCheckoutSchema(Schema):
     user_id: int
+    payment_method: Optional[str] = None
+    special_instructions: str = ""
 
 class CreateOrderFromCartSchema(Schema):
     user_id: int
@@ -674,30 +676,17 @@ def get_cart(request, user_id: int, last_updated: Optional[int] = None):
 # Checkout endpoints
 @api.post("/checkout/start", auth=TokenAuth(), response=CheckoutStatusSchema)
 def start_checkout(request, data: StartCheckoutSchema):
-    """Start checkout process - locks the cart for all devices"""
+    """Start checkout process - stores payment details for collaborative checkout"""
     try:
         user_id = data.user_id
         checkout_key = f"checkout:{user_id}"
-        device_id_key = f"checkout_device:{user_id}"
         
-        # Get device identifier from request (use a simple timestamp + random)
-        import time
-        device_id = str(time.time())
-        
-        # Check if checkout already in progress
-        existing = redis_client.get(checkout_key)
-        if existing:
-            # Return existing device ID
-            existing_device = redis_client.get(device_id_key)
-            return {
-                "is_checkout_in_progress": True, 
-                "checkout_by_user_id": user_id,
-                "device_id": existing_device
-            }
-        
-        # Set checkout lock with 60 second expiry
-        redis_client.setex(checkout_key, 60, str(user_id))
-        redis_client.setex(device_id_key, 60, device_id)
+        # Store checkout state with payment details
+        checkout_data = {
+            "payment_method": data.payment_method,
+            "special_instructions": data.special_instructions
+        }
+        redis_client.setex(checkout_key, 300, json.dumps(checkout_data))  # 5 min expiry
         
         # Broadcast checkout status via WebSocket
         channel_layer = get_channel_layer()
@@ -706,71 +695,45 @@ def start_checkout(request, data: StartCheckoutSchema):
             {
                 'type': 'checkout_status',
                 'is_checkout_in_progress': True,
-                'checkout_by_user_id': user_id,
-                'device_id': device_id
+                'payment_method': data.payment_method,
+                'special_instructions': data.special_instructions
             }
         )
         
         return {
-            "is_checkout_in_progress": True, 
-            "checkout_by_user_id": user_id,
-            "device_id": device_id
+            "is_checkout_in_progress": True,
+            "payment_method": data.payment_method,
+            "special_instructions": data.special_instructions
         }
     except Exception as e:
         print(f"Error starting checkout: {e}")
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None}
+        return {"is_checkout_in_progress": False, "payment_method": None, "special_instructions": ""}
 
 @api.get("/checkout/status", auth=TokenAuth(), response=CheckoutStatusSchema)
 def get_checkout_status(request, user_id: int):
     """Get checkout status for a user"""
     try:
         checkout_key = f"checkout:{user_id}"
-        device_id_key = f"checkout_device:{user_id}"
         checkout_data = redis_client.get(checkout_key)
         
         if checkout_data:
-            device_id = redis_client.get(device_id_key)
+            data = json.loads(checkout_data)
             return {
-                "is_checkout_in_progress": True, 
-                "checkout_by_user_id": int(checkout_data),
-                "device_id": device_id
+                "is_checkout_in_progress": True,
+                "payment_method": data.get("payment_method"),
+                "special_instructions": data.get("special_instructions", "")
             }
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+        return {"is_checkout_in_progress": False, "payment_method": None, "special_instructions": ""}
     except Exception as e:
         print(f"Error getting checkout status: {e}")
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
-
-@api.post("/checkout/heartbeat", auth=TokenAuth(), response=CheckoutStatusSchema)
-def checkout_heartbeat(request, user_id: int, device_id: Optional[str] = None):
-    """Keep checkout lock alive - call every 15 seconds from active checkout device"""
-    try:
-        checkout_key = f"checkout:{user_id}"
-        device_id_key = f"checkout_device:{user_id}"
-        checkout_data = redis_client.get(checkout_key)
-        
-        if checkout_data:
-            # Refresh the expiry to 60 seconds
-            redis_client.setex(checkout_key, 60, str(user_id))
-            if device_id:
-                redis_client.setex(device_id_key, 60, device_id)
-            return {
-                "is_checkout_in_progress": True, 
-                "checkout_by_user_id": user_id,
-                "device_id": device_id
-            }
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
-    except Exception as e:
-        print(f"Error in checkout heartbeat: {e}")
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+        return {"is_checkout_in_progress": False, "payment_method": None, "special_instructions": ""}
 
 @api.post("/checkout/cancel", auth=TokenAuth(), response=CheckoutStatusSchema)
 def cancel_checkout(request, user_id: int):
     """Cancel checkout process"""
     try:
         checkout_key = f"checkout:{user_id}"
-        device_id_key = f"checkout_device:{user_id}"
         redis_client.delete(checkout_key)
-        redis_client.delete(device_id_key)
         
         # Broadcast checkout cancellation via WebSocket
         channel_layer = get_channel_layer()
@@ -779,15 +742,50 @@ def cancel_checkout(request, user_id: int):
             {
                 'type': 'checkout_status',
                 'is_checkout_in_progress': False,
-                'checkout_by_user_id': None,
-                'device_id': None
+                'payment_method': None,
+                'special_instructions': ""
             }
         )
         
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+        return {"is_checkout_in_progress": False, "payment_method": None, "special_instructions": ""}
     except Exception as e:
         print(f"Error canceling checkout: {e}")
-        return {"is_checkout_in_progress": False, "checkout_by_user_id": None, "device_id": None}
+        return {"is_checkout_in_progress": False, "payment_method": None, "special_instructions": ""}
+
+@api.post("/checkout/update", auth=TokenAuth(), response=CheckoutStatusSchema)
+def update_checkout(request, data: StartCheckoutSchema):
+    """Update payment method or special instructions during checkout"""
+    try:
+        user_id = data.user_id
+        checkout_key = f"checkout:{user_id}"
+        
+        # Update checkout data
+        checkout_data = {
+            "payment_method": data.payment_method,
+            "special_instructions": data.special_instructions
+        }
+        redis_client.setex(checkout_key, 300, json.dumps(checkout_data))
+        
+        # Broadcast update via WebSocket
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'cart_{user_id}',
+            {
+                'type': 'checkout_status',
+                'is_checkout_in_progress': True,
+                'payment_method': data.payment_method,
+                'special_instructions': data.special_instructions
+            }
+        )
+        
+        return {
+            "is_checkout_in_progress": True,
+            "payment_method": data.payment_method,
+            "special_instructions": data.special_instructions
+        }
+    except Exception as e:
+        print(f"Error updating checkout: {e}")
+        return {"is_checkout_in_progress": False, "payment_method": None, "special_instructions": ""}
 
 @api.post("/checkout/complete", auth=TokenAuth(), response={200: OrderSchema, 400: ErrorSchema})
 def complete_checkout(request, data: CreateOrderFromCartSchema):
@@ -841,11 +839,12 @@ def complete_checkout(request, data: CreateOrderFromCartSchema):
                 price_at_order=item["menu_item"]["price"]
             )
         
-        # Clear cart and checkout status
-        redis_client.delete(cart_key)
-        redis_client.delete(f"cart:{user_id}:last_updated")
-        redis_client.delete(f"checkout:{user_id}")
-        redis_client.delete(f"checkout_device:{user_id}")
+        # Clear cart and checkout status atomically
+        pipe = redis_client.pipeline()
+        pipe.delete(cart_key)
+        pipe.delete(f"cart:{user_id}:last_updated")
+        pipe.delete(f"checkout:{user_id}")
+        pipe.execute()
         
         # Broadcast cart clear and checkout completion via WebSocket
         channel_layer = get_channel_layer()

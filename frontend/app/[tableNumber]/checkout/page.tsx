@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { apiClient, auth } from "@/lib/api";
 import { loadCartFromLocalStorage, getCartTotal, CartItem, connectCartWebSocket } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
-import { CreditCard, Smartphone, Banknote, ArrowLeft, Lock } from "lucide-react";
+import { CreditCard, Smartphone, Banknote, ArrowLeft } from "lucide-react";
 
 export default function CheckoutPage() {
   const params = useParams();
@@ -21,16 +21,8 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<"upi" | "card" | "cash" | null>(null);
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isReadOnly, setIsReadOnly] = useState(false);
-  const [checkoutOwnerId, setCheckoutOwnerId] = useState<number | null>(null);
-  const [myDeviceId, setMyDeviceId] = useState<string>("");
-  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Generate unique device ID for this session
-    const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    setMyDeviceId(deviceId);
-
     // Check authentication
     if (!auth.isAuthenticated()) {
       router.push(`/${tableNumber}`);
@@ -45,9 +37,9 @@ export default function CheckoutPage() {
         const uid = payload.user_id || null;
         setUserId(uid);
         
-        // Check checkout status first
+        // Load existing checkout state if any
         if (uid) {
-          checkCheckoutStatus(uid, deviceId);
+          loadCheckoutState(uid);
         }
       } catch (e) {
         console.error("Error parsing token:", e);
@@ -64,114 +56,107 @@ export default function CheckoutPage() {
   }, [tableNumber, router]);
 
   useEffect(() => {
-    if (!userId || !myDeviceId) return;
+    if (!userId) return;
 
-    if (!isReadOnly) {
-      // Start checkout and send heartbeat every 15 seconds
-      startCheckout();
-      const heartbeatInterval = setInterval(() => {
-        sendHeartbeat();
-      }, 15000);
-      return () => clearInterval(heartbeatInterval);
-    } else {
-      // Poll checkout status every 3 seconds to check if unlocked
-      const statusInterval = setInterval(() => {
-        checkCheckoutStatus(userId, myDeviceId);
-      }, 3000);
-      return () => clearInterval(statusInterval);
-    }
-  }, [userId, myDeviceId, isReadOnly]);
+    // Start checkout when entering page
+    startCheckout();
+  }, [userId]);
 
   useEffect(() => {
-    // Connect to WebSocket for checkout status updates
-    if (!userId || !myDeviceId) return;
+    // Connect to WebSocket for real-time sync across devices
+    if (!userId) return;
 
     const disconnect = connectCartWebSocket(
       userId,
       (items) => setCartItems(items),
-      (isInProgress, byUserId, deviceId) => {
-        setActiveDeviceId(deviceId || null);
-        
-        if (!isInProgress) {
-          // Checkout was cancelled, allow this device to checkout
-          setIsReadOnly(false);
-          setCheckoutOwnerId(null);
-        } else if (deviceId && deviceId !== myDeviceId) {
-          // Another device is checking out
-          setIsReadOnly(true);
-          setCheckoutOwnerId(byUserId);
-        } else if (deviceId === myDeviceId) {
-          // This device owns the checkout
-          setIsReadOnly(false);
+      (isInProgress, paymentMethodFromWS, specialInstructionsFromWS) => {
+        // Sync checkout state from other devices
+        if (isInProgress) {
+          if (paymentMethodFromWS) {
+            setPaymentMethod(paymentMethodFromWS as "upi" | "card" | "cash");
+          }
+          if (specialInstructionsFromWS) {
+            setSpecialInstructions(specialInstructionsFromWS);
+          }
         }
       },
-      () => {
-        // Checkout completed
-        router.push(`/${tableNumber}`);
+      (orderId) => {
+        // Checkout completed - redirect to order status page
+        router.push(`/${tableNumber}/order/${orderId}`);
       }
     );
 
     return () => disconnect();
-  }, [userId, myDeviceId, tableNumber, router]);
+  }, [userId, tableNumber, router]);
 
-  const checkCheckoutStatus = async (uid: number, deviceId: string) => {
+  const loadCheckoutState = async (uid: number) => {
     try {
       const { data } = await apiClient.GET("/api/v1/checkout/status", {
         params: { query: { user_id: uid } }
       });
 
       if (data?.is_checkout_in_progress) {
-        setActiveDeviceId(data.device_id || null);
-        
-        if (data.device_id && data.device_id !== deviceId) {
-          // Another device is checking out
-          setIsReadOnly(true);
-          setCheckoutOwnerId(data.checkout_by_user_id || null);
-        } else if (data.device_id === deviceId) {
-          // This device owns the checkout
-          setIsReadOnly(false);
-        } else {
-          // No device ID match, take over
-          setIsReadOnly(false);
+        if (data.payment_method) {
+          setPaymentMethod(data.payment_method as "upi" | "card" | "cash");
         }
-      } else {
-        // No checkout in progress
-        setIsReadOnly(false);
-        setCheckoutOwnerId(null);
-        setActiveDeviceId(null);
+        if (data.special_instructions) {
+          setSpecialInstructions(data.special_instructions);
+        }
       }
     } catch (error) {
-      console.error("Error checking checkout status:", error);
-    }
-  };
-
-  const sendHeartbeat = async () => {
-    if (!userId || !myDeviceId) return;
-
-    try {
-      await apiClient.POST("/api/v1/checkout/heartbeat", {
-        params: { query: { user_id: userId, device_id: myDeviceId } }
-      });
-    } catch (error) {
-      console.error("Error sending heartbeat:", error);
+      console.error("Error loading checkout state:", error);
     }
   };
 
   const startCheckout = async () => {
-    const token = auth.getToken();
-    if (!token) return;
+    if (!userId) return;
 
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const uid = payload.user_id;
-
       await apiClient.POST("/api/v1/checkout/start", {
-        body: { user_id: uid }
+        body: { 
+          user_id: userId,
+          payment_method: paymentMethod,
+          special_instructions: specialInstructions
+        }
       });
     } catch (error) {
       console.error("Error starting checkout:", error);
     }
   };
+
+  const updateCheckout = async (newPaymentMethod?: string, newInstructions?: string) => {
+    if (!userId) return;
+
+    try {
+      await apiClient.POST("/api/v1/checkout/update", {
+        body: {
+          user_id: userId,
+          payment_method: newPaymentMethod || paymentMethod,
+          special_instructions: newInstructions !== undefined ? newInstructions : specialInstructions
+        }
+      });
+    } catch (error) {
+      console.error("Error updating checkout:", error);
+    }
+  };
+
+  const handlePaymentMethodChange = (method: "upi" | "card" | "cash") => {
+    setPaymentMethod(method);
+    updateCheckout(method, specialInstructions);
+  };
+
+  const handleInstructionsChange = (instructions: string) => {
+    setSpecialInstructions(instructions);
+    // Debounce the update to avoid too many API calls
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+    updateTimeoutRef.current = setTimeout(() => {
+      updateCheckout(paymentMethod || undefined, instructions);
+    }, 500);
+  };
+
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleCompleteCheckout = async () => {
     if (!paymentMethod || !userId) return;
@@ -203,36 +188,12 @@ export default function CheckoutPage() {
   };
 
   const handleCancel = async () => {
-    if (userId && !isReadOnly) {
+    if (userId) {
       await apiClient.POST("/api/v1/checkout/cancel", {
         params: { query: { user_id: userId } }
       });
     }
     router.back();
-  };
-
-  const handleTakeOver = async () => {
-    if (!userId) return;
-    
-    setLoading(true);
-    try {
-      // Force cancel existing checkout
-      await apiClient.POST("/api/v1/checkout/cancel", {
-        params: { query: { user_id: userId } }
-      });
-      
-      // Wait a moment then start new checkout
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await startCheckout();
-      
-      setIsReadOnly(false);
-      setCheckoutOwnerId(null);
-    } catch (error) {
-      console.error("Error taking over checkout:", error);
-      alert("Failed to take over checkout. Please try again.");
-    } finally {
-      setLoading(false);
-    }
   };
 
   const total = getCartTotal(cartItems);
@@ -251,38 +212,11 @@ export default function CheckoutPage() {
               <h1 className="text-2xl font-bold">Checkout</h1>
               <p className="text-sm text-gray-600">Table {tableNumber}</p>
             </div>
-            {isReadOnly && (
-              <div className="flex items-center gap-2 text-yellow-700 bg-yellow-50 px-3 py-1 rounded-full">
-                <Lock className="h-4 w-4" />
-                <span className="text-sm font-medium">Read Only</span>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {isReadOnly && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-yellow-800 font-medium text-center">
-              🔒 Checkout in progress on another device
-            </p>
-            <p className="text-yellow-700 text-sm text-center mt-1">
-              You can view the order but cannot make changes. The lock will auto-release in 60 seconds if the other device disconnects.
-            </p>
-            <div className="mt-3 flex justify-center">
-              <Button
-                onClick={handleTakeOver}
-                disabled={loading}
-                variant="outline"
-                size="sm"
-              >
-                {loading ? "Taking Over..." : "Take Over Checkout"}
-              </Button>
-            </div>
-          </div>
-        )}
-        {/* Order Summary */}
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">{/* Order Summary */}
         <div className="bg-white rounded-lg p-6 border">
           <h2 className="text-lg font-semibold mb-4">Order Summary</h2>
           <div className="space-y-3">
@@ -309,13 +243,12 @@ export default function CheckoutPage() {
           <h2 className="text-lg font-semibold mb-4">Payment Method</h2>
           <div className="grid gap-3">
             <button
-              onClick={() => !isReadOnly && setPaymentMethod("upi")}
-              disabled={isReadOnly}
+              onClick={() => handlePaymentMethodChange("upi")}
               className={`flex items-center gap-4 p-4 border-2 rounded-lg transition-all ${
                 paymentMethod === "upi"
                   ? "border-black bg-gray-50"
                   : "border-gray-200 hover:border-gray-300"
-              } ${isReadOnly ? "opacity-50 cursor-not-allowed" : ""}`}
+              }`}
             >
               <Smartphone className="h-6 w-6" />
               <div className="text-left">
@@ -325,13 +258,12 @@ export default function CheckoutPage() {
             </button>
 
             <button
-              onClick={() => !isReadOnly && setPaymentMethod("card")}
-              disabled={isReadOnly}
+              onClick={() => handlePaymentMethodChange("card")}
               className={`flex items-center gap-4 p-4 border-2 rounded-lg transition-all ${
                 paymentMethod === "card"
                   ? "border-black bg-gray-50"
                   : "border-gray-200 hover:border-gray-300"
-              } ${isReadOnly ? "opacity-50 cursor-not-allowed" : ""}`}
+              }`}
             >
               <CreditCard className="h-6 w-6" />
               <div className="text-left">
@@ -341,13 +273,12 @@ export default function CheckoutPage() {
             </button>
 
             <button
-              onClick={() => !isReadOnly && setPaymentMethod("cash")}
-              disabled={isReadOnly}
+              onClick={() => handlePaymentMethodChange("cash")}
               className={`flex items-center gap-4 p-4 border-2 rounded-lg transition-all ${
                 paymentMethod === "cash"
                   ? "border-black bg-gray-50"
                   : "border-gray-200 hover:border-gray-300"
-              } ${isReadOnly ? "opacity-50 cursor-not-allowed" : ""}`}
+              }`}
             >
               <Banknote className="h-6 w-6" />
               <div className="text-left">
@@ -367,9 +298,8 @@ export default function CheckoutPage() {
             id="instructions"
             placeholder="Any special requests for your order..."
             value={specialInstructions}
-            onChange={(e) => setSpecialInstructions(e.target.value)}
+            onChange={(e) => handleInstructionsChange(e.target.value)}
             className="mt-2"
-            disabled={isReadOnly}
           />
         </div>
 
@@ -377,10 +307,10 @@ export default function CheckoutPage() {
         <div className="space-y-3">
           <Button
             onClick={handleCompleteCheckout}
-            disabled={!paymentMethod || loading || isReadOnly}
+            disabled={!paymentMethod || loading}
             className="w-full h-12 text-lg"
           >
-            {loading ? "Processing..." : isReadOnly ? "Checkout Locked" : `Place Order - ₹${formatPrice(total)}`}
+            {loading ? "Processing..." : `Place Order - ₹${formatPrice(total)}`}
           </Button>
           <Button
             variant="outline"
@@ -388,7 +318,7 @@ export default function CheckoutPage() {
             disabled={loading}
             className="w-full"
           >
-            {isReadOnly ? "Back to Menu" : "Cancel"}
+            Cancel
           </Button>
         </div>
       </div>

@@ -100,8 +100,8 @@ export async function fetchCartFromServer(
 export function connectCartWebSocket(
   userId: number,
   onCartUpdate: (items: CartItem[]) => void,
-  onCheckoutStatus?: (isInProgress: boolean, byUserId: number | null, deviceId?: string | null) => void,
-  onCheckoutComplete?: () => void
+  onCheckoutStatus?: (isInProgress: boolean, paymentMethod?: string | null, specialInstructions?: string) => void,
+  onCheckoutComplete?: (orderId: number) => void
 ) {
   const token = auth.getToken();
   if (!token) {
@@ -137,14 +137,14 @@ export function connectCartWebSocket(
       } else if (message.type === "checkout_status" && onCheckoutStatus) {
         onCheckoutStatus(
           message.is_checkout_in_progress,
-          message.checkout_by_user_id,
-          message.device_id
+          message.payment_method,
+          message.special_instructions
         );
       } else if (message.type === "checkout_complete" && onCheckoutComplete) {
         // Clear local cart on checkout completion
         clearCart();
         onCartUpdate([]);
-        onCheckoutComplete();
+        onCheckoutComplete(message.order_id);
       }
     } catch (error) {
       console.error("Error processing WebSocket message:", error);

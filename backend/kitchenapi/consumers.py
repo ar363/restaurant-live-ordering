@@ -71,8 +71,8 @@ class CartConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'checkout_status',
             'is_checkout_in_progress': event['is_checkout_in_progress'],
-            'checkout_by_user_id': event.get('checkout_by_user_id'),
-            'device_id': event.get('device_id')
+            'payment_method': event.get('payment_method'),
+            'special_instructions': event.get('special_instructions', '')
         }))
     
     async def checkout_complete(self, event):
