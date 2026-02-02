@@ -12,6 +12,10 @@ import redis
 import json
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.db.models import Sum, Count, Avg, F, Q, DecimalField
+from django.db.models.functions import TruncHour, TruncDate
+from django.db.models import ExpressionWrapper
+from django.utils import timezone
 
 api = NinjaAPI()
 
@@ -143,6 +147,23 @@ class UpdateOrderStatusSchema(Schema):
 class KitchenLoginSchema(Schema):
     username: str
     password: str
+
+class OwnerLoginSchema(Schema):
+    username: str
+    password: str
+
+class DashboardStatsSchema(Schema):
+    revenue_trends: List[dict]
+    revenue_by_payment: dict
+    revenue_by_hour: List[dict]
+    top_items: List[dict]
+    revenue_by_category: List[dict]
+    low_performers: List[dict]
+    avg_items_per_order: float
+    unique_customers: int
+    repeat_customer_rate: float
+    customer_lifetime_value: float
+    period_comparison: dict
 
 # Auth endpoints
 @api.post("/auth/check-user", auth=None, response=UserExistsSchema)
@@ -455,6 +476,28 @@ def kitchen_login(request, data: KitchenLoginSchema):
         return {
             "token": token,
             "user": {"id": user.id, "username": user.username, "is_staff": user.is_staff}
+        }
+    return 401, {"error": "Invalid credentials"}
+
+@api.post("/owner/login", auth=None, response={200: AuthResponseSchema, 401: ErrorSchema, 403: ErrorSchema})
+def owner_login(request, data: OwnerLoginSchema):
+    """Login for owner/superuser only"""
+    user = authenticate(username=data.username, password=data.password)
+    if user:
+        if not user.is_superuser:
+            return 403, {"error": "Owner access required"}
+        
+        payload = {
+            'user_id': user.id,
+            'username': user.username,
+            'is_superuser': user.is_superuser,
+            'exp': datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+        }
+        token = jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
+        
+        return {
+            "token": token,
+            "user": {"id": user.id, "username": user.username, "is_superuser": user.is_superuser}
         }
     return 401, {"error": "Invalid credentials"}
 
@@ -911,5 +954,229 @@ def complete_checkout(request, data: CreateOrderFromCartSchema):
     except Exception as e:
         print(f"Error completing checkout: {e}")
         return 400, {"error": str(e)}
+
+
+# Owner Dashboard Analytics Endpoints
+@api.get("/owner/analytics", response=DashboardStatsSchema, auth=TokenAuth())
+def get_owner_analytics(request, period: str = "today"):
+    """Get comprehensive analytics for owner dashboard"""
+    if not request.auth.is_superuser:
+        return 403, {"error": "Owner access required"}
+    
+    # Determine date range based on period
+    now = timezone.now()
+    if period == "today":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        previous_start = start_date - timedelta(days=1)
+        previous_end = start_date
+    elif period == "week":
+        start_date = now - timedelta(days=now.weekday())
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        previous_start = start_date - timedelta(days=7)
+        previous_end = start_date
+    elif period == "month":
+        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Previous month
+        if start_date.month == 1:
+            previous_start = start_date.replace(year=start_date.year - 1, month=12)
+        else:
+            previous_start = start_date.replace(month=start_date.month - 1)
+        previous_end = start_date
+    else:
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        previous_start = start_date - timedelta(days=1)
+        previous_end = start_date
+    
+    end_date = now
+    
+    # Filter completed orders only
+    current_orders = Order.objects.filter(
+        created_at__gte=start_date,
+        created_at__lte=end_date,
+        status='completed'
+    )
+    
+    previous_orders = Order.objects.filter(
+        created_at__gte=previous_start,
+        created_at__lt=previous_end,
+        status='completed'
+    )
+    
+    # Revenue Trends
+    if period == "today":
+        # Hourly breakdown for today
+        revenue_trends = list(
+            current_orders.annotate(hour=TruncHour('created_at'))
+            .values('hour')
+            .annotate(revenue=Sum('total_amount'))
+            .order_by('hour')
+        )
+        revenue_trends = [
+            {
+                'time': item['hour'].strftime('%H:%M') if item['hour'] else '',
+                'revenue': float(item['revenue'] or 0)
+            }
+            for item in revenue_trends
+        ]
+    else:
+        # Daily breakdown for week/month
+        revenue_trends = list(
+            current_orders.annotate(date=TruncDate('created_at'))
+            .values('date')
+            .annotate(revenue=Sum('total_amount'))
+            .order_by('date')
+        )
+        revenue_trends = [
+            {
+                'time': item['date'].strftime('%Y-%m-%d') if item['date'] else '',
+                'revenue': float(item['revenue'] or 0)
+            }
+            for item in revenue_trends
+        ]
+    
+    # Revenue by Payment Method
+    payment_breakdown = current_orders.values('payment_method').annotate(
+        revenue=Sum('total_amount')
+    )
+    revenue_by_payment = {
+        item['payment_method'] or 'unknown': float(item['revenue'] or 0)
+        for item in payment_breakdown
+    }
+    
+    # Revenue by Hour (for the entire period)
+    revenue_by_hour_data = current_orders.annotate(
+        hour=TruncHour('created_at')
+    ).values('hour').annotate(
+        revenue=Sum('total_amount')
+    ).order_by('hour')
+    
+    revenue_by_hour = [
+        {
+            'hour': item['hour'].hour if item['hour'] else 0,
+            'revenue': float(item['revenue'] or 0)
+        }
+        for item in revenue_by_hour_data
+    ]
+    
+    # Top Selling Items
+    top_items_data = OrderItem.objects.filter(
+        order__in=current_orders
+    ).annotate(
+        subtotal=ExpressionWrapper(F('quantity') * F('price_at_order'), output_field=DecimalField())
+    ).values(
+        'menu_item__name'
+    ).annotate(
+        quantity=Sum('quantity'),
+        revenue=Sum('subtotal')
+    ).order_by('-revenue')[:10]
+    
+    top_items = [
+        {
+            'name': item['menu_item__name'],
+            'quantity': item['quantity'],
+            'revenue': float(item['revenue'] or 0)
+        }
+        for item in top_items_data
+    ]
+    
+    # Revenue by Category
+    revenue_by_category_data = OrderItem.objects.filter(
+        order__in=current_orders
+    ).annotate(
+        subtotal=ExpressionWrapper(F('quantity') * F('price_at_order'), output_field=DecimalField())
+    ).values(
+        'menu_item__category'
+    ).annotate(
+        revenue=Sum('subtotal')
+    ).order_by('-revenue')
+    
+    revenue_by_category = [
+        {
+            'category': item['menu_item__category'],
+            'revenue': float(item['revenue'] or 0)
+        }
+        for item in revenue_by_category_data
+    ]
+    
+    # Low Performers (items with low sales)
+    all_items_sales = OrderItem.objects.filter(
+        order__in=current_orders
+    ).annotate(
+        subtotal=ExpressionWrapper(F('quantity') * F('price_at_order'), output_field=DecimalField())
+    ).values(
+        'menu_item__name'
+    ).annotate(
+        quantity=Sum('quantity'),
+        revenue=Sum('subtotal')
+    ).order_by('revenue')[:10]
+    
+    low_performers = [
+        {
+            'name': item['menu_item__name'],
+            'quantity': item['quantity'],
+            'revenue': float(item['revenue'] or 0)
+        }
+        for item in all_items_sales
+    ]
+    
+    # Average Items per Order
+    avg_items = OrderItem.objects.filter(
+        order__in=current_orders
+    ).values('order').annotate(
+        total_items=Sum('quantity')
+    ).aggregate(
+        avg=Avg('total_items')
+    )
+    avg_items_per_order = float(avg_items['avg'] or 0)
+    
+    # Unique Customers
+    unique_customers = current_orders.values('user').distinct().count()
+    
+    # Repeat Customer Rate
+    total_customers = current_orders.values('user').distinct().count()
+    repeat_customers = current_orders.values('user').annotate(
+        order_count=Count('id')
+    ).filter(order_count__gt=1).count()
+    repeat_customer_rate = (repeat_customers / total_customers * 100) if total_customers > 0 else 0
+    
+    # Customer Lifetime Value
+    all_time_orders = Order.objects.filter(status='completed')
+    total_revenue = all_time_orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    total_unique_customers = all_time_orders.values('user').distinct().count()
+    customer_lifetime_value = float(total_revenue / total_unique_customers) if total_unique_customers > 0 else 0
+    
+    # Period Comparison
+    current_revenue = current_orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    previous_revenue = previous_orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    
+    current_order_count = current_orders.count()
+    previous_order_count = previous_orders.count()
+    
+    revenue_change = ((current_revenue - previous_revenue) / previous_revenue * 100) if previous_revenue > 0 else 0
+    order_change = ((current_order_count - previous_order_count) / previous_order_count * 100) if previous_order_count > 0 else 0
+    
+    period_comparison = {
+        'current_revenue': float(current_revenue),
+        'previous_revenue': float(previous_revenue),
+        'revenue_change_percent': float(revenue_change),
+        'current_orders': current_order_count,
+        'previous_orders': previous_order_count,
+        'order_change_percent': float(order_change)
+    }
+    
+    return {
+        'revenue_trends': revenue_trends,
+        'revenue_by_payment': revenue_by_payment,
+        'revenue_by_hour': revenue_by_hour,
+        'top_items': top_items,
+        'revenue_by_category': revenue_by_category,
+        'low_performers': low_performers,
+        'avg_items_per_order': avg_items_per_order,
+        'unique_customers': unique_customers,
+        'repeat_customer_rate': float(repeat_customer_rate),
+        'customer_lifetime_value': customer_lifetime_value,
+        'period_comparison': period_comparison
+    }
+
 
 

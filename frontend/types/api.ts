@@ -198,6 +198,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/owner/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner Login
+         * @description Login for owner/superuser only
+         */
+        post: operations["kitchenapi_views_owner_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/kitchen/orders": {
         parameters: {
             query?: never;
@@ -307,7 +327,7 @@ export interface paths {
         put?: never;
         /**
          * Start Checkout
-         * @description Start checkout process - locks the cart for all devices
+         * @description Start checkout process - stores payment details for collaborative checkout
          */
         post: operations["kitchenapi_views_start_checkout"];
         delete?: never;
@@ -336,26 +356,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/checkout/heartbeat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Checkout Heartbeat
-         * @description Keep checkout lock alive - call every 15 seconds from active checkout device
-         */
-        post: operations["kitchenapi_views_checkout_heartbeat"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/checkout/cancel": {
         parameters: {
             query?: never;
@@ -376,6 +376,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/checkout/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update Checkout
+         * @description Update payment method or special instructions during checkout
+         */
+        post: operations["kitchenapi_views_update_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/checkout/complete": {
         parameters: {
             query?: never;
@@ -390,6 +410,26 @@ export interface paths {
          * @description Complete checkout - create order from cart and clear cart
          */
         post: operations["kitchenapi_views_complete_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/owner/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Owner Analytics
+         * @description Get comprehensive analytics for owner dashboard
+         */
+        get: operations["kitchenapi_views_get_owner_analytics"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -464,11 +504,6 @@ export interface components {
             id?: number;
             /** Table Number */
             table_number: number;
-            /**
-             * Qr Code
-             * @default
-             */
-            qr_code: string;
             /**
              * Is Occupied
              * @default false
@@ -563,6 +598,13 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** OwnerLoginSchema */
+        OwnerLoginSchema: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+        };
         /** CartSyncResponseSchema */
         CartSyncResponseSchema: {
             /** Success */
@@ -597,15 +639,25 @@ export interface components {
         CheckoutStatusSchema: {
             /** Is Checkout In Progress */
             is_checkout_in_progress: boolean;
-            /** Checkout By User Id */
-            checkout_by_user_id?: number | null;
-            /** Device Id */
-            device_id?: string | null;
+            /** Payment Method */
+            payment_method?: string | null;
+            /**
+             * Special Instructions
+             * @default
+             */
+            special_instructions: string;
         };
         /** StartCheckoutSchema */
         StartCheckoutSchema: {
             /** User Id */
             user_id: number;
+            /** Payment Method */
+            payment_method?: string | null;
+            /**
+             * Special Instructions
+             * @default
+             */
+            special_instructions: string;
         };
         /** CreateOrderFromCartSchema */
         CreateOrderFromCartSchema: {
@@ -620,6 +672,45 @@ export interface components {
              * @default
              */
             special_instructions: string;
+        };
+        /** DashboardStatsSchema */
+        DashboardStatsSchema: {
+            /** Revenue Trends */
+            revenue_trends: {
+                [key: string]: unknown;
+            }[];
+            /** Revenue By Payment */
+            revenue_by_payment: {
+                [key: string]: unknown;
+            };
+            /** Revenue By Hour */
+            revenue_by_hour: {
+                [key: string]: unknown;
+            }[];
+            /** Top Items */
+            top_items: {
+                [key: string]: unknown;
+            }[];
+            /** Revenue By Category */
+            revenue_by_category: {
+                [key: string]: unknown;
+            }[];
+            /** Low Performers */
+            low_performers: {
+                [key: string]: unknown;
+            }[];
+            /** Avg Items Per Order */
+            avg_items_per_order: number;
+            /** Unique Customers */
+            unique_customers: number;
+            /** Repeat Customer Rate */
+            repeat_customer_rate: number;
+            /** Customer Lifetime Value */
+            customer_lifetime_value: number;
+            /** Period Comparison */
+            period_comparison: {
+                [key: string]: unknown;
+            };
         };
     };
     responses: never;
@@ -1055,6 +1146,48 @@ export interface operations {
             };
         };
     };
+    kitchenapi_views_owner_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerLoginSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponseSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+        };
+    };
     kitchenapi_views_get_kitchen_orders: {
         parameters: {
             query?: never;
@@ -1250,11 +1383,10 @@ export interface operations {
             };
         };
     };
-    kitchenapi_views_checkout_heartbeat: {
+    kitchenapi_views_cancel_checkout: {
         parameters: {
             query: {
                 user_id: number;
-                device_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -1273,16 +1405,18 @@ export interface operations {
             };
         };
     };
-    kitchenapi_views_cancel_checkout: {
+    kitchenapi_views_update_checkout: {
         parameters: {
-            query: {
-                user_id: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartCheckoutSchema"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -1324,6 +1458,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorSchema"];
+                };
+            };
+        };
+    };
+    kitchenapi_views_get_owner_analytics: {
+        parameters: {
+            query?: {
+                period?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardStatsSchema"];
                 };
             };
         };
