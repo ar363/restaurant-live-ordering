@@ -3,6 +3,18 @@ import type { paths } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Helper to get full media URL
+export function getMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  // If already absolute URL, return as is
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  // Remove leading slash if present to avoid double slashes
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+  return `${API_URL}/${cleanPath}`;
+}
+
 export const apiClient = createClient<paths>({
   baseUrl: API_URL,
 });

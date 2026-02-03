@@ -6,7 +6,8 @@ import { AuthDrawer } from "@/components/auth-drawer";
 import { CartDrawer } from "@/components/cart-drawer";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { apiClient, auth } from "@/lib/api";
+import { apiClient, auth, getMediaUrl } from "@/lib/api";
+import { History, ShoppingCart } from "lucide-react";
 import { formatPrice } from "@/lib/format";
 import {
   loadCartFromLocalStorage,
@@ -200,34 +201,47 @@ export default function MenuPage() {
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Table {tableNumber}</h1>
-              <p className="text-sm text-gray-600">Browse our menu</p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold truncate">Table {tableNumber}</h1>
+              <p className="text-xs sm:text-sm text-gray-600">Browse our menu</p>
             </div>
-            <div className="flex items-center gap-2">
-              {isAuthenticated && (
+            {isAuthenticated && totalItems > 0 && (
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="text-right hidden sm:block">
+                  <div className="text-sm font-medium">{totalItems} items</div>
+                  <div className="text-lg font-bold">₹{formatPrice(totalPrice)}</div>
+                </div>
                 <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => router.push(`/${tableNumber}/orders`)}
+                  onClick={() => setShowCartDrawer(true)}
+                  className="relative"
+                  size="default"
                 >
-                  Order History
+                  <ShoppingCart className="h-5 w-5 sm:mr-2" />
+                  <span className="hidden sm:inline">View Cart</span>
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center sm:hidden">
+                    {totalItems}
+                  </span>
                 </Button>
-              )}
-              {isAuthenticated && totalItems > 0 && (
-                <>
-                  <div className="text-right">
-                    <div className="text-sm font-medium">{totalItems} items</div>
-                    <div className="text-lg font-bold">₹{formatPrice(totalPrice)}</div>
-                  </div>
-                  <Button onClick={() => setShowCartDrawer(true)}>View Cart</Button>
-                </>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Order History Floating Button */}
+      {isAuthenticated && (
+        <button
+          onClick={() => router.push(`/${tableNumber}/orders`)}
+          className="fixed bottom-6 left-6 z-20 bg-white hover:bg-gray-50 text-gray-700 rounded-full shadow-lg border-2 border-gray-200 p-3 sm:p-4 transition-all hover:shadow-xl active:scale-95 flex items-center gap-2 group"
+          aria-label="Order History"
+        >
+          <History className="h-5 w-5 sm:h-6 sm:w-6" />
+          <span className="hidden group-hover:inline-block text-sm font-medium pr-1 max-w-0 group-hover:max-w-xs transition-all overflow-hidden whitespace-nowrap">
+            Order History
+          </span>
+        </button>
+      )}
 
       {/* Menu Content */}
       <div className="max-w-4xl mx-auto px-4 py-6">
@@ -269,15 +283,16 @@ export default function MenuPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   {items.map((item) => {
                     const qty = getItemQuantity(cartItems, item.id!);
+                    const imageUrl = getMediaUrl(item.image);
                     return (
                       <div
                         key={item.id}
                         className="bg-white rounded-lg p-4 border hover:shadow-md transition-shadow"
                       >
                         <div className="flex gap-4">
-                          {item.image ? (
+                          {imageUrl ? (
                             <img
-                              src={item.image}
+                              src={imageUrl}
                               alt={item.name}
                               className="w-24 h-24 object-cover rounded-md flex-shrink-0"
                             />

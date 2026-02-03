@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { CartItem, getCartTotal, getCartItemCount } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
+import { getMediaUrl } from "@/lib/api";
 import { Minus, Plus, Trash2 } from "lucide-react";
 
 interface CartDrawerProps {
@@ -62,14 +63,16 @@ export function CartDrawer({
             </div>
           ) : (
             <div className="space-y-4 pb-4">
-              {items.map((item) => (
+              {items.map((item) => {
+                const imageUrl = getMediaUrl(item.menu_item.image);
+                return (
                 <div
                   key={item.menu_item_id}
                   className="flex gap-4 bg-gray-50 rounded-lg p-4"
                 >
-                  {item.menu_item.image ? (
+                  {imageUrl ? (
                     <img
-                      src={item.menu_item.image}
+                      src={imageUrl}
                       alt={item.menu_item.name}
                       className="w-20 h-20 object-cover rounded-md"
                     />
@@ -130,7 +133,7 @@ export function CartDrawer({
                     </div>
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </div>
