@@ -68,66 +68,68 @@ export function CartDrawer({
                 return (
                 <div
                   key={item.menu_item_id}
-                  className="flex gap-4 bg-gray-50 rounded-lg p-4"
+                  className="flex gap-3 sm:gap-4 bg-gray-50 rounded-lg p-3 sm:p-4"
                 >
                   {imageUrl ? (
                     <img
                       src={imageUrl}
                       alt={item.menu_item.name}
-                      className="w-20 h-20 object-cover rounded-md"
+                      className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-md flex-shrink-0"
                     />
                   ) : (
-                    <div className="w-20 h-20 bg-gray-200 rounded-md flex items-center justify-center">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-200 rounded-md flex items-center justify-center flex-shrink-0">
                       <span className="text-gray-400 text-xs">No image</span>
                     </div>
                   )}
 
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-lg">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-base sm:text-lg">
                       {item.menu_item.name}
                     </h3>
                     {item.menu_item.description && (
-                      <p className="text-sm text-gray-600 line-clamp-2">
+                      <p className="text-xs sm:text-sm text-gray-600 line-clamp-1 sm:line-clamp-2">
                         {item.menu_item.description}
                       </p>
                     )}
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="font-bold text-lg">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
+                      <span className="font-bold text-base sm:text-lg">
                         ₹{formatPrice(item.menu_item.price * item.quantity)}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            onUpdateQuantity(item.menu_item_id, item.quantity - 1)
-                          }
-                          className="h-8 w-8 p-0"
-                          disabled={isCheckoutInProgress}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <span className="font-medium min-w-[30px] text-center">
-                          {item.quantity}
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            onUpdateQuantity(item.menu_item_id, item.quantity + 1)
-                          }
-                          className="h-8 w-8 p-0"
-                          disabled={isCheckoutInProgress}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
+                      <div className="flex items-center justify-between sm:justify-end gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              onUpdateQuantity(item.menu_item_id, item.quantity - 1)
+                            }
+                            className="h-7 w-7 sm:h-8 sm:w-8 p-0"
+                            disabled={isCheckoutInProgress}
+                          >
+                            <Minus className="h-3 w-3 sm:h-4 sm:w-4" />
+                          </Button>
+                          <span className="font-medium min-w-[24px] sm:min-w-[30px] text-center text-sm sm:text-base">
+                            {item.quantity}
+                          </span>
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              onUpdateQuantity(item.menu_item_id, item.quantity + 1)
+                            }
+                            className="h-7 w-7 sm:h-8 sm:w-8 p-0"
+                            disabled={isCheckoutInProgress}
+                          >
+                            <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
+                          </Button>
+                        </div>
                         <Button
                           variant="destructive"
                           size="sm"
                           onClick={() => onRemoveItem(item.menu_item_id)}
-                          className="h-8 w-8 p-0 ml-2"
+                          className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                           disabled={isCheckoutInProgress}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
                       </div>
                     </div>
