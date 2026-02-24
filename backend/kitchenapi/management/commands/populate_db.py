@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from django.core.files import File
+from django.conf import settings
 from kitchenapi.models import Table, MenuItem, Order, OrderItem
 from decimal import Decimal
 from pathlib import Path
@@ -232,7 +233,7 @@ class Command(BaseCommand):
         ]
 
         menu_items = []
-        demo_images_dir = Path(__file__).resolve().parent.parent / 'demo_images'
+        demo_images_dir = settings.BASE_DIR / 'kitchenapi' / 'management' / 'demo_images'
         
         for item_data in menu_data:
             image_query = item_data.pop('image_query', None)
@@ -246,8 +247,8 @@ class Command(BaseCommand):
                 filename = f"{item_data['name'].lower().replace(' ', '_').replace('(', '').replace(')', '')}.webp"
                 image_path = demo_images_dir / filename
                 
-                # Attach image to menu item if available and item has no image
-                if image_path.exists() and not item.image:
+                # Attach image if the source exists and file is missing from disk
+                if image_path.exists() and (not item.image or not Path(settings.MEDIA_ROOT / item.image.name).exists()):
                     with open(image_path, 'rb') as img_file:
                         item.image.save(filename, File(img_file), save=True)
                     self.stdout.write(f'  → Attached image to {item.name}')

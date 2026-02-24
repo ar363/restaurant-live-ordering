@@ -1,0 +1,21 @@
+FROM python:3.13-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+# Install production dependencies only
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# Copy source
+COPY . .
+
+# Pre-compile .pyc files and collect static
+RUN uv run python -m compileall -q . \
+ && uv run python manage.py collectstatic --noinput
+
+EXPOSE 8000
+
+CMD ["uv", "run", "daphne", "-b", "0.0.0.0", "-p", "8000", "conf.asgi:application"]

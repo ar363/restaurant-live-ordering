@@ -1,7 +1,18 @@
 import createClient from "openapi-fetch";
 import type { paths } from "@/types/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Server-side (SSR/Server Components): call the backend container directly.
+// Client-side (browser): use relative URL so requests go through nginx.
+const API_URL =
+  typeof window === "undefined"
+    ? (process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000")
+    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
+
+// Media URLs must always be browser-accessible (via nginx), never the internal backend URL.
+const MEDIA_BASE =
+  typeof window === "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
 
 // Helper to get full media URL
 export function getMediaUrl(path: string | null | undefined): string | null {
@@ -12,7 +23,7 @@ export function getMediaUrl(path: string | null | undefined): string | null {
   }
   // Remove leading slash if present to avoid double slashes
   const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-  return `${API_URL}/${cleanPath}`;
+  return MEDIA_BASE ? `${MEDIA_BASE}/${cleanPath}` : `/${cleanPath}`;
 }
 
 export const apiClient = createClient<paths>({

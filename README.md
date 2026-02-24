@@ -74,6 +74,8 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 - **Authentication**: JWT tokens
 - **Cache**: Redis
 
+---
+
 ## Key Features Detail
 
 ### Real-time Cart Synchronization
@@ -93,3 +95,83 @@ The owner dashboard provides comprehensive insights:
 - Peak hours analysis for staffing decisions
 - Menu performance metrics to optimize offerings
 - Customer behavior patterns for retention strategies
+
+## Getting Started
+
+### Docker (recommended)
+
+> Requires [Docker](https://docs.docker.com/engine/install/) with the Compose plugin.
+
+#### Development
+
+```bash
+POPULATE_DB=true docker compose up --build
+```
+
+Open **http://localhost**.
+
+| Option | Default | Description |
+|---|---|---|
+| `PORT` | `80` | Host port nginx listens on |
+| `POPULATE_DB` | `false` | Seed demo menu/orders/users on startup |
+
+**Demo credentials** (created by `populate_db`):
+- **Kitchen / Owner login** — create a Django superuser after the containers are up:
+  ```bash
+  docker compose exec backend uv run python manage.py createsuperuser
+  ```
+- **Customer login** — any user created by the seed script uses password `123123`.
+  Usernames are 10-digit Indian phone numbers; check the backend startup logs for the list,
+  or browse `/admin/` with your superuser account.
+
+Hot-reload is enabled for both frontend (`next dev`) and backend (Daphne restarts on file change because the source directory is bind-mounted).
+
+#### Production
+
+```bash
+SECRET_KEY=<strong-random-key> docker compose -f docker-compose.prod.yml up --build
+```
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SECRET_KEY` | **yes** | — | Django secret key |
+| `PORT` | no | `80` | Host port |
+| `ALLOWED_HOSTS` | no | `*` | Comma-separated allowed hostnames |
+| `DATABASE_URL` | no | SQLite on a volume | e.g. `postgres://user:pass@host/db` |
+
+The prod stack builds `next build` + a standalone Node runner, collects Django static files, and serves media directly from nginx.
+
+---
+
+### Local development (without Docker)
+
+#### Backend
+
+```bash
+cd backend
+uv sync
+uv run python manage.py migrate
+uv run python manage.py populate_db   # optional demo data
+uv run daphne -b 0.0.0.0 -p 8000 conf.asgi:application
+```
+
+A local Redis instance is required for WebSocket support.
+
+#### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:3000
+```
+
+The frontend expects the backend at `http://localhost:8000` by default.
+Set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` to override.
+
+#### Regenerate API types
+
+After changing backend schemas:
+```bash
+cd frontend
+npm run update-api-types
+```
