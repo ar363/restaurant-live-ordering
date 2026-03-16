@@ -15,7 +15,7 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 </tr>
 <tr>
 <td width="50%">(vid) - Yet to upload</td>
-<td width="50%"><video width="100%" controls><source src="./demos/1.mp4" type="video/mp4"></video></td>
+<td width="50%"><video width="100%" controls><source src="https://github.com/ar363/restaurant-live-ordering/raw/refs/heads/main/demos/1.mp4" type="video/mp4"></video></td>
 </tr>
 </table>
 
