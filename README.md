@@ -6,14 +6,7 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 
 ### Customer View
 
-<table>
-<tr>
-<td width="100%" align="center"><b>Browsing Interface</b></td>
-</tr>
-<tr>
-<td width="100%"><img src="./demos/1.png" alt="Browsing Interface" width="100%"></td>
-</tr>
-</table>
+<img src="./demos/1.png" alt="Browsing Interface" width="100%">
 
 <table>
 <tr>
@@ -22,24 +15,13 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 </tr>
 <tr>
 <td width="50%">(vid) - Yet to upload</td>
-<td width="50%">(vid) - Yet to upload</td>
+<td width="50%"><video width="100%" controls><source src="./demos/1.mp4" type="video/mp4"></video></td>
 </tr>
 </table>
 
 ### Kitchen Dashboard
 
-<table>
-<tr>
-<td width="50%" align="center"><b>Organised Kitchen Dashboard</b></td>
-<td width="50%" align="center"><b>Live Order Update Workflow</b></td>
-</tr>
-<tr>
-<td width="50%">
 <img src="./demos/2.png" alt="Organised Kitchen Dashboard" width="100%">
-</td>
-<td width="50%">(vid) - Yet to upload</td>
-</tr>
-</table>
 
 ### Owner Dashboard
 
