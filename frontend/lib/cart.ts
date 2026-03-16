@@ -15,7 +15,23 @@ export interface CartData {
 }
 
 const CART_STORAGE_KEY = "restaurant_cart";
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+
+function getWebSocketURL(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+  
+  // Client-side only - build URL from current host
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:8000'; // Fallback for SSR
+  }
+  
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${protocol}://${window.location.host}`;
+}
+
+const MAX_RETRIES = 5;
+const INITIAL_RETRY_DELAY = 1000; // 1 second
 
 // Local storage functions
 export function saveCartToLocalStorage(items: CartItem[]): number {
@@ -109,60 +125,88 @@ export function connectCartWebSocket(
     return () => {};
   }
 
-  const ws = new WebSocket(`${WS_URL}/ws/cart/?token=${token}`);
-  
-  ws.onopen = () => {
-    console.log("Cart WebSocket connected");
-  };
-  
-  ws.onmessage = (event) => {
+  let retries = 0;
+  let retryTimeout: NodeJS.Timeout | null = null;
+  let ws: WebSocket | null = null;
+
+  const connect = () => {
     try {
-      const message = JSON.parse(event.data);
-      
-      if (message.type === "cart_update" && message.data) {
-        const { items, last_updated } = message.data;
-        
-        // Check if this update is newer than our local version
-        const localCart = loadCartFromLocalStorage();
-        const localData = localStorage.getItem(CART_STORAGE_KEY);
-        const localLastUpdated = localData 
-          ? JSON.parse(localData).last_updated 
-          : 0;
-        
-        if (last_updated > localLastUpdated) {
-          // Update from server
-          onCartUpdate(items);
-          saveCartToLocalStorage(items);
+      ws = new WebSocket(`${getWebSocketURL()}/ws/cart/?token=${token}`);
+
+      ws.onopen = () => {
+        console.log("Cart WebSocket connected");
+        retries = 0; // Reset retry count on successful connection
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+
+          if (message.type === "cart_update" && message.data) {
+            const { items, last_updated } = message.data;
+
+            // Check if this update is newer than our local version
+            const localCart = loadCartFromLocalStorage();
+            const localData = localStorage.getItem(CART_STORAGE_KEY);
+            const localLastUpdated = localData
+              ? JSON.parse(localData).last_updated
+              : 0;
+
+            if (last_updated > localLastUpdated) {
+              // Update from server
+              onCartUpdate(items);
+              saveCartToLocalStorage(items);
+            }
+          } else if (message.type === "checkout_status" && onCheckoutStatus) {
+            onCheckoutStatus(
+              message.is_checkout_in_progress,
+              message.payment_method,
+              message.special_instructions
+            );
+          } else if (message.type === "checkout_complete" && onCheckoutComplete) {
+            // Clear local cart on checkout completion
+            clearCart();
+            onCartUpdate([]);
+            onCheckoutComplete(message.order_id);
+          }
+        } catch (error) {
+          console.error("Error processing WebSocket message:", error);
         }
-      } else if (message.type === "checkout_status" && onCheckoutStatus) {
-        onCheckoutStatus(
-          message.is_checkout_in_progress,
-          message.payment_method,
-          message.special_instructions
-        );
-      } else if (message.type === "checkout_complete" && onCheckoutComplete) {
-        // Clear local cart on checkout completion
-        clearCart();
-        onCartUpdate([]);
-        onCheckoutComplete(message.order_id);
-      }
+      };
+
+      ws.onerror = (error) => {
+        console.error("Cart WebSocket error:", error);
+        // The onclose handler will handle reconnection
+      };
+
+      ws.onclose = () => {
+        console.log("Cart WebSocket disconnected");
+
+        // Attempt to reconnect with exponential backoff
+        if (retries < MAX_RETRIES) {
+          const delay = INITIAL_RETRY_DELAY * Math.pow(2, retries);
+          console.log(`Cart WebSocket: Attempting to reconnect in ${delay}ms (attempt ${retries + 1}/${MAX_RETRIES})`);
+          retries++;
+          retryTimeout = setTimeout(connect, delay);
+        } else {
+          console.error('Cart WebSocket: Max reconnection attempts reached');
+        }
+      };
     } catch (error) {
-      console.error("Error processing WebSocket message:", error);
+      console.error('Error creating Cart WebSocket connection:', error);
     }
   };
-  
-  ws.onerror = (error) => {
-    console.error("Cart WebSocket error:", error);
-  };
-  
-  ws.onclose = () => {
-    console.log("Cart WebSocket disconnected");
-  };
-  
+
+  // Initial connection
+  connect();
+
   // Return cleanup function
   return () => {
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-      ws.close();
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+    }
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close(1000, 'Client disconnecting');
     }
   };
 }

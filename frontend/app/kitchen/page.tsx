@@ -18,6 +18,7 @@ export default function KitchenDashboard() {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [staffName, setStaffName] = useState("");
+  const [hoursFilter, setHoursFilter] = useState(24);
 
   useEffect(() => {
     const token = localStorage.getItem("kitchen_token");
@@ -30,14 +31,16 @@ export default function KitchenDashboard() {
 
     setStaffName(name || "Staff");
 
-    // Fetch initial orders
-    fetchOrders(token);
+    // Fetch initial orders with current filter
+    fetchOrders(token, hoursFilter);
 
     // Connect to WebSocket
     const disconnect = connectKitchenWebSocket(token, {
       onNewOrder: (order) => {
-        setOrders((prev) => [order, ...prev]);
-        // Play notification sound or show toast
+        // Only add new orders if they're within the current filter window
+        if (isSwitchOrderWithinFilter(order)) {
+          setOrders((prev) => [order, ...prev]);
+        }
         console.log("New order received:", order);
       },
       onOrderUpdate: (order) => {
@@ -51,11 +54,24 @@ export default function KitchenDashboard() {
     });
 
     return disconnect;
-  }, [router]);
+  }, [router, hoursFilter]);
 
-  const fetchOrders = async (token: string) => {
+  const isSwitchOrderWithinFilter = (order: KitchenOrder) => {
+    if (!order.created_at || hoursFilter === 0) return true; // 0 = all orders
+    
+    const orderTime = new Date(order.created_at).getTime();
+    const nowTime = new Date().getTime();
+    const hoursDiff = (nowTime - orderTime) / (1000 * 60 * 60);
+    
+    return hoursDiff <= hoursFilter;
+  };
+
+  const fetchOrders = async (token: string, hours: number) => {
     try {
       const { data, error } = await apiClient.GET("/api/v1/kitchen/orders", {
+        params: {
+          query: hours > 0 ? { hours } : {},
+        },
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -185,6 +201,39 @@ export default function KitchenDashboard() {
           </div>
           <Button onClick={handleLogout} variant="outline">
             Logout
+          </Button>
+        </div>
+
+        {/* Time Filter Controls */}
+        <div className="mb-6 flex gap-2 flex-wrap">
+          <span className="text-sm font-medium text-gray-700 self-center">Filter:</span>
+          <Button
+            onClick={() => setHoursFilter(24)}
+            variant={hoursFilter === 24 ? "default" : "outline"}
+            size="sm"
+          >
+            Last 24h
+          </Button>
+          <Button
+            onClick={() => setHoursFilter(7 * 24)}
+            variant={hoursFilter === 7 * 24 ? "default" : "outline"}
+            size="sm"
+          >
+            Last 7 Days
+          </Button>
+          <Button
+            onClick={() => setHoursFilter(30 * 24)}
+            variant={hoursFilter === 30 * 24 ? "default" : "outline"}
+            size="sm"
+          >
+            Last 30 Days
+          </Button>
+          <Button
+            onClick={() => setHoursFilter(0)}
+            variant={hoursFilter === 0 ? "default" : "outline"}
+            size="sm"
+          >
+            All Orders
           </Button>
         </div>
 

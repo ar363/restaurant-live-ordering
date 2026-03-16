@@ -6,7 +6,6 @@ from kitchenapi.models import Table, MenuItem, Order, OrderItem
 from decimal import Decimal
 from pathlib import Path
 import random
-from faker import Faker
 
 
 class Command(BaseCommand):
@@ -20,35 +19,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        fake = Faker('en_IN')  # Indian locale for names
-        
         if options['clear']:
             self.stdout.write(self.style.WARNING('Clearing existing data...'))
             OrderItem.objects.all().delete()
             Order.objects.all().delete()
             MenuItem.objects.all().delete()
             Table.objects.all().delete()
-            User.objects.filter(is_superuser=False).delete()
             self.stdout.write(self.style.SUCCESS('✓ Cleared existing data'))
-
-        # Create users
-        self.stdout.write('Creating users...')
-        users = []
-        for i in range(1, 11):  # Create 10 users
-            phone_number = f'{random.randint(7, 9)}{random.randint(100000000, 999999999)}'
-            user, created = User.objects.get_or_create(
-                username=phone_number,
-                defaults={
-                    'email': f'{phone_number}@restaurant.local',
-                    'first_name': fake.first_name(),
-                    'last_name': fake.last_name(),
-                }
-            )
-            if created:
-                user.set_password('123123')
-                user.save()
-            users.append(user)
-        self.stdout.write(self.style.SUCCESS(f'✓ Created {len(users)} users'))
 
         # Create tables
         self.stdout.write('Creating tables...')
@@ -258,65 +235,28 @@ class Command(BaseCommand):
             menu_items.append(item)
         self.stdout.write(self.style.SUCCESS(f'✓ Created {len(menu_items)} menu items'))
 
-        # Create sample orders
-        self.stdout.write('Creating sample orders...')
-        order_statuses = ['pending', 'preparing', 'ready', 'delivered', 'completed']
-        payment_methods = ['cash', 'upi', 'card']
+        # Create kitchen superuser
+        self.stdout.write('Creating kitchen superuser...')
+        kitchen_user, created = User.objects.get_or_create(
+            username='kitchen',
+            defaults={
+                'email': 'kitchen@restaurant.local',
+                'is_staff': True,
+                'is_superuser': True,
+            }
+        )
+        if created:
+            kitchen_user.set_password('kitchen')
+            kitchen_user.save()
+            self.stdout.write(self.style.SUCCESS('✓ Created kitchen superuser'))
+        else:
+            self.stdout.write(self.style.SUCCESS('✓ Kitchen superuser already exists'))
         
-        orders_created = 0
-        # Create ~10 orders per user
-        for user in users:
-            num_orders = random.randint(8, 12)
-            for _ in range(num_orders):
-                table = random.choice(tables)
-                status = random.choice(order_statuses)
-                payment_method = random.choice(payment_methods)
-                
-                # Create order
-                order = Order.objects.create(
-                    user=user,
-                    table=table,
-                    status=status,
-                    payment_method=payment_method,
-                    payment_status=status == 'completed',
-                    special_instructions=random.choice([
-                        '',
-                        'Extra spicy please',
-                        'No onions',
-                        'Less oil',
-                        'Pack separately',
-                    ])
-                )
-                
-                # Add 2-5 random items to each order
-                num_items = random.randint(2, 5)
-                selected_items = random.sample(menu_items, num_items)
-                total = Decimal('0.00')
-                
-                for menu_item in selected_items:
-                    quantity = random.randint(1, 3)
-                    OrderItem.objects.create(
-                        order=order,
-                        menu_item=menu_item,
-                        quantity=quantity,
-                        price_at_order=menu_item.price,
-                        special_instructions=random.choice(['', 'Extra sauce', 'Less spicy'])
-                    )
-                    total += menu_item.price * quantity
-                
-                order.total_amount = total
-                order.save()
-                orders_created += 1
-
-        self.stdout.write(self.style.SUCCESS(f'✓ Created {orders_created} sample orders'))
-        
-        self.stdout.write(self.style.SUCCESS('\n✅ Database populated successfully!'))
-        self.stdout.write(self.style.SUCCESS(f'\nSummary:'))
-        self.stdout.write(f'  • Users: {User.objects.count()}')
+        self.stdout.write(self.style.SUCCESS('\\n✅ Database seeded successfully!'))
+        self.stdout.write(self.style.SUCCESS(f'\\nData created:'))
         self.stdout.write(f'  • Tables: {Table.objects.count()}')
         self.stdout.write(f'  • Menu Items: {MenuItem.objects.count()}')
-        self.stdout.write(f'  • Orders: {Order.objects.count()}')
-        self.stdout.write(f'  • Order Items: {OrderItem.objects.count()}')
-        self.stdout.write(self.style.SUCCESS(f'\nTest credentials:'))
-        self.stdout.write(f'  Username: <any 10-digit phone number from users above>')
-        self.stdout.write(f'  Password: 123123')
+        self.stdout.write(self.style.SUCCESS(f'\\nDefault credentials:'))
+        self.stdout.write(f'  🔐 Kitchen Dashboard:')
+        self.stdout.write(f'     Username: kitchen')
+        self.stdout.write(f'     Password: kitchen')

@@ -116,13 +116,11 @@ Open **http://localhost**.
 | `POPULATE_DB` | `false` | Seed demo menu/orders/users on startup |
 
 **Demo credentials** (created by `populate_db`):
-- **Kitchen / Owner login** — create a Django superuser after the containers are up:
+- **Kitchen Dashboard** — username: `kitchen`, password: `kitchen`
+- **Django Admin** — create a superuser for admin access:
   ```bash
   docker compose exec backend uv run python manage.py createsuperuser
   ```
-- **Customer login** — any user created by the seed script uses password `123123`.
-  Usernames are 10-digit Indian phone numbers; check the backend startup logs for the list,
-  or browse `/admin/` with your superuser account.
 
 Hot-reload is enabled for both frontend (`next dev`) and backend (Daphne restarts on file change because the source directory is bind-mounted).
 

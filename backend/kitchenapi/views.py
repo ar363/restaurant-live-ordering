@@ -502,12 +502,22 @@ def owner_login(request, data: OwnerLoginSchema):
     return 401, {"error": "Invalid credentials"}
 
 @api.get("/kitchen/orders", response=List[OrderSchema], auth=TokenAuth())
-def get_kitchen_orders(request):
-    """Get all active orders for kitchen dashboard"""
+def get_kitchen_orders(request, hours: int = 24):
+    """Get active orders for kitchen dashboard (past N hours by default, 0 = all)"""
     if not request.auth.is_staff:
         return []
     
-    orders = Order.objects.exclude(status__in=['completed', 'cancelled']).order_by('created_at')
+    # Build queryset
+    queryset = Order.objects.exclude(
+        status__in=['completed', 'cancelled']
+    )
+    
+    # Filter by time if hours > 0
+    if hours > 0:
+        time_threshold = timezone.now() - timedelta(hours=hours)
+        queryset = queryset.filter(created_at__gte=time_threshold)
+    
+    orders = queryset.order_by('-created_at')
     
     result = []
     for order in orders:

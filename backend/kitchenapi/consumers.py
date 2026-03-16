@@ -1,10 +1,12 @@
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 import jwt
 from django.conf import settings
 from django.contrib.auth.models import User
 
+logger = logging.getLogger(__name__)
 SECRET_KEY = getattr(settings, 'SECRET_KEY')
 JWT_ALGORITHM = 'HS256'
 
@@ -18,6 +20,7 @@ class CartConsumer(AsyncWebsocketConsumer):
         # Authenticate using token
         token = params.get('token')
         if not token:
+            logger.warning("CartConsumer: No token provided")
             await self.accept()
             await self.close(code=4001)
             return
@@ -26,6 +29,7 @@ class CartConsumer(AsyncWebsocketConsumer):
             payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
             user_id = payload.get('user_id')
             if not user_id:
+                logger.warning("CartConsumer: No user_id in token")
                 await self.accept()
                 await self.close(code=4002)
                 return
@@ -33,14 +37,21 @@ class CartConsumer(AsyncWebsocketConsumer):
             self.user_id = user_id
             self.room_group_name = f'cart_{user_id}'
             
-            # Join room group
-            await self.channel_layer.group_add(
-                self.room_group_name,
-                self.channel_name
-            )
-            
             await self.accept()
-        except (jwt.ExpiredSignatureError, jwt.DecodeError):
+            
+            # Join room group
+            try:
+                await self.channel_layer.group_add(
+                    self.room_group_name,
+                    self.channel_name
+                )
+                logger.info(f"CartConsumer: User {user_id} connected to cart group")
+            except Exception as e:
+                logger.error(f"CartConsumer: Error adding to group: {e}")
+                await self.close(code=1011)
+                
+        except (jwt.ExpiredSignatureError, jwt.DecodeError) as e:
+            logger.warning(f"CartConsumer: Token validation failed: {e}")
             await self.accept()
             await self.close(code=4003)
 
@@ -90,6 +101,7 @@ class KitchenConsumer(AsyncWebsocketConsumer):
         
         token = params.get('token')
         if not token:
+            logger.warning("KitchenConsumer: No token provided")
             await self.accept()
             await self.close(code=4001)
             return
@@ -99,6 +111,7 @@ class KitchenConsumer(AsyncWebsocketConsumer):
             is_staff = payload.get('is_staff', False)
             
             if not is_staff:
+                logger.warning("KitchenConsumer: Non-staff user attempted kitchen access")
                 await self.accept()
                 await self.close(code=4003)
                 return
@@ -106,15 +119,21 @@ class KitchenConsumer(AsyncWebsocketConsumer):
             self.user_id = payload.get('user_id')
             self.room_group_name = 'kitchen'
             
-            # Accept FIRST
             await self.accept()
             
-            # Then add to group
-            await self.channel_layer.group_add(
-                self.room_group_name,
-                self.channel_name
-            )
-        except (jwt.ExpiredSignatureError, jwt.DecodeError):
+            # Join kitchen group
+            try:
+                await self.channel_layer.group_add(
+                    self.room_group_name,
+                    self.channel_name
+                )
+                logger.info(f"KitchenConsumer: Staff user {self.user_id} connected to kitchen group")
+            except Exception as e:
+                logger.error(f"KitchenConsumer: Error adding to group: {e}")
+                await self.close(code=1011)
+                
+        except (jwt.ExpiredSignatureError, jwt.DecodeError) as e:
+            logger.warning(f"KitchenConsumer: Token validation failed: {e}")
             await self.accept()
             await self.close(code=4002)
 
