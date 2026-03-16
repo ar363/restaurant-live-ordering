@@ -27,6 +27,7 @@ services:
     command: >
       sh -c "uv sync --frozen &&
              uv run python manage.py migrate --noinput &&
+             uv run python manage.py collectstatic --noinput --clear &&
              { [ \"$$POPULATE_DB\" != \"true\" ] || uv run python manage.py populate_db; } &&
              uv run daphne -b 0.0.0.0 -p 8000 conf.asgi:application"
 
