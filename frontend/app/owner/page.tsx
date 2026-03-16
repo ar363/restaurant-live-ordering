@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getApiUrl } from "@/lib/api";
 import {
   LineChart,
   Line,
@@ -67,7 +68,7 @@ export default function OwnerDashboard() {
     try {
       const token = localStorage.getItem("owner_token");
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/owner/analytics?period=${selectedPeriod}`,
+        `${getApiUrl()}/api/v1/owner/analytics?period=${selectedPeriod}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

@@ -1,18 +1,42 @@
 import createClient from "openapi-fetch";
 import type { paths } from "@/types/api";
 
-// Server-side (SSR/Server Components): call the backend container directly.
-// Client-side (browser): use relative URL so requests go through nginx.
-const API_URL =
-  typeof window === "undefined"
-    ? (process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000")
-    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
+// Helper to get the API URL based on environment
+export function getApiUrl(): string {
+  // Server-side (SSR/Server Components): call the backend container directly.
+  if (typeof window === "undefined") {
+    return process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000";
+  }
+  
+  // Client-side: use env var if explicitly set
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  
+  // Otherwise, use same host as frontend (will go through nginx)
+  const protocol = window.location.protocol;
+  const host = window.location.host;
+  return `${protocol}//${host}`;
+}
 
-// Media URLs must always be browser-accessible (via nginx), never the internal backend URL.
-const MEDIA_BASE =
-  typeof window === "undefined"
-    ? ""
-    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
+// Helper to get media base URL
+function getMediaBaseUrl(): string {
+  // Server-side: no media base needed
+  if (typeof window === "undefined") {
+    return "";
+  }
+  
+  // Client-side: use env var if explicitly set
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  
+  // Otherwise, use same host as frontend
+  return `${window.location.protocol}//${window.location.host}`;
+}
+
+const API_URL = getApiUrl();
+const MEDIA_BASE = getMediaBaseUrl();
 
 // Helper to get full media URL
 export function getMediaUrl(path: string | null | undefined): string | null {

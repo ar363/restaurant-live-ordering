@@ -8,14 +8,21 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 
 <table>
 <tr>
-<td width="33%" align="center"><b>Browsing Interface</b></td>
-<td width="33%" align="center"><b>Live Cart Sync for Group Ordering</b></td>
-<td width="33%" align="center"><b>Realtime Order Tracking</b></td>
+<td width="100%" align="center"><b>Browsing Interface</b></td>
 </tr>
 <tr>
-<td width="33%">(img) - Yet to upload</td>
-<td width="33%">(vid) - Yet to upload</td>
-<td width="33%">(vid) - Yet to upload</td>
+<td width="100%"><img src="./demos/1.png" alt="Browsing Interface" width="100%"></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" align="center"><b>Live Cart Sync for Group Ordering</b></td>
+<td width="50%" align="center"><b>Realtime Order Tracking</b></td>
+</tr>
+<tr>
+<td width="50%">(vid) - Yet to upload</td>
+<td width="50%">(vid) - Yet to upload</td>
 </tr>
 </table>
 
@@ -27,7 +34,9 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 <td width="50%" align="center"><b>Live Order Update Workflow</b></td>
 </tr>
 <tr>
-<td width="50%">(img) - Yet to upload</td>
+<td width="50%">
+<img src="./demos/2.png" alt="Organised Kitchen Dashboard" width="100%">
+</td>
 <td width="50%">(vid) - Yet to upload</td>
 </tr>
 </table>
@@ -41,9 +50,15 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 <td width="33%" align="center"><b>Item Performance</b></td>
 </tr>
 <tr>
-<td width="33%">(img) - Yet to upload</td>
-<td width="33%">(img) - Yet to upload</td>
-<td width="33%">(img) - Yet to upload</td>
+<td width="33%">
+<img src="./demos/3.png" alt="Revenue Details" width="100%">
+</td>
+<td width="33%">
+<img src="./demos/4.png" alt="Customer Insights" width="100%">
+</td>
+<td width="33%">
+<img src="./demos/5.png" alt="Item Performance" width="100%">
+</td>
 </tr>
 </table>
 
