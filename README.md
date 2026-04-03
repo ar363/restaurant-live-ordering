@@ -1,6 +1,6 @@
 # Real-Time Restaurant Table Ordering System
 
-A modern, real-time restaurant ordering system built with Next.js, Django, and WebSockets. Customers scan QR codes to instantly browse menus and place orders, while kitchen staff receive live notifications and manage orders with instant status updates across all devices.
+A real-time restaurant ordering system built with Next.js, Django, and WebSockets. Customers can browse menus and place orders through multiple synced devices, while kitchen staff receive live notifications and manage orders with instant status updates.
 
 ## System Preview
 
@@ -8,20 +8,13 @@ A modern, real-time restaurant ordering system built with Next.js, Django, and W
 
 <img src="./demos/1.png" alt="Browsing Interface" width="100%">
 
-<table>
-<tr>
-<td width="50%" align="center"><b>Live Cart Sync for Group Ordering</b></td>
-<td width="50%" align="center"><b>Realtime Order Tracking</b></td>
-</tr>
-<tr>
-<td width="50%">(vid) - Yet to upload</td>
-<td width="50%"><video width="100%" controls><source src="https://github.com/ar363/restaurant-live-ordering/raw/refs/heads/main/demos/1.mp4" type="video/mp4"></video></td>
-</tr>
-</table>
+### Multiple Person Live Ordering & Cart Synchronization
 
-### Kitchen Dashboard
+<img src="./demos/order.gif" alt="Cart sync demo" width="100%">
 
-<img src="./demos/2.png" alt="Organised Kitchen Dashboard" width="100%">
+### Kitchen Dashboard with Realtime Order Status Tracking
+
+<img src="./demos/kitchen.gif" alt="Order tracking demo" width="100%">
 
 ### Owner Dashboard
 
